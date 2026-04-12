@@ -1,0 +1,50 @@
+{
+  "name": "ai-lead-conversion-real-estate",
+  "version": "0.1.0",
+  "description": "AI Lead Conversion MVP for Real Estate Agencies",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yocho1/yocho1-AI-Lead-Conversion-System-for-Real-Estate-Agencies.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/yocho1/yocho1-AI-Lead-Conversion-System-for-Real-Estate-Agencies/issues"
+  },
+  "homepage": "https://github.com/yocho1/yocho1-AI-Lead-Conversion-System-for-Real-Estate-Agencies#readme",
+  "private": true,
+  "dependencies": {
+    "@supabase/supabase-js": "^2.103.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.8.0",
+    "next": "^16.2.3",
+    "openai": "^6.34.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitest/ui": "^4.1.4",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.3",
+    "jsdom": "^29.0.2",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
+  }
+}
