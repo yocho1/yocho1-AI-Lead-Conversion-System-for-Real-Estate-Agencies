@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createGoogleCalendarLink } from "@/lib/calendar";
+import {
+  getMandatoryCaptureMessage,
+  hasEnoughMessagesForMandatoryGate,
+  isMandatoryInfoMissing,
+} from "@/lib/chat-flow";
 import { getAssistantReply } from "@/lib/ai";
 import { extractLeadSignals } from "@/lib/lead-parser";
 import { classifyLead } from "@/lib/qualification";
@@ -36,6 +41,7 @@ export async function POST(request: Request) {
 
     const { agencyApiKey, leadId, message } = parsed.data;
     const supabase = getServerSupabase();
+    const incomingSignals = extractLeadSignals(message);
 
     const { data: agency } = await supabase.from("agencies").select("id, name").eq("api_key", agencyApiKey).single();
 
@@ -45,11 +51,31 @@ export async function POST(request: Request) {
 
     let currentLeadId = leadId || null;
 
+    if (!currentLeadId && (incomingSignals.email || incomingSignals.phone)) {
+      let dedupeQuery = supabase.from("leads").select("id").eq("agency_id", agency.id).order("created_at", { ascending: false }).limit(1);
+
+      if (incomingSignals.email && incomingSignals.phone) {
+        dedupeQuery = dedupeQuery.or(`email.eq.${incomingSignals.email},phone.eq.${incomingSignals.phone}`);
+      } else if (incomingSignals.email) {
+        dedupeQuery = dedupeQuery.eq("email", incomingSignals.email);
+      } else if (incomingSignals.phone) {
+        dedupeQuery = dedupeQuery.eq("phone", incomingSignals.phone);
+      }
+
+      const { data: existingLead } = await dedupeQuery.maybeSingle();
+      if (existingLead?.id) {
+        currentLeadId = existingLead.id;
+      }
+    }
+
     if (!currentLeadId) {
       const { data: insertedLead, error: leadInsertError } = await supabase
         .from("leads")
         .insert({
           agency_id: agency.id,
+          name: incomingSignals.name || null,
+          email: incomingSignals.email || null,
+          phone: incomingSignals.phone || null,
           status: "cold",
         })
         .select("id")
@@ -81,6 +107,7 @@ export async function POST(request: Request) {
       .order("timestamp", { ascending: true });
 
     const conversationMessages = (conversation || []) as Message[];
+    const userMessageCount = conversationMessages.filter((entry) => entry.role === "user").length;
     const allUserText = conversationMessages
       .filter((entry) => entry.role === "user")
       .map((entry) => entry.content)
@@ -88,20 +115,8 @@ export async function POST(request: Request) {
 
     const extracted = extractLeadSignals(allUserText);
     const merged = mergeSignals((lead || {}) as Record<string, string | null>, extracted);
-    const status = classifyLead(merged);
-
-    const assistantText = await getAssistantReply(conversationMessages, status);
-    const calendarLink = status === "hot" ? createGoogleCalendarLink(merged.location || "your selected area") : null;
-
-    const assistantMessage = calendarLink
-      ? `${assistantText}\n\nYou can book a property visit here: ${calendarLink}`
-      : assistantText;
-
-    await supabase.from("messages").insert({
-      lead_id: currentLeadId,
-      role: "assistant",
-      content: assistantMessage,
-    });
+    const mustCapture = isMandatoryInfoMissing(merged) && hasEnoughMessagesForMandatoryGate(userMessageCount);
+    const status = mustCapture ? "cold" : classifyLead(merged);
 
     await supabase
       .from("leads")
@@ -116,6 +131,36 @@ export async function POST(request: Request) {
         status,
       })
       .eq("id", currentLeadId);
+
+    if (mustCapture) {
+      const captureMessage = getMandatoryCaptureMessage(merged);
+
+      await supabase.from("messages").insert({
+        lead_id: currentLeadId,
+        role: "assistant",
+        content: captureMessage,
+      });
+
+      return NextResponse.json({
+        leadId: currentLeadId,
+        status,
+        assistantMessage: captureMessage,
+        mandatoryCapturePending: true,
+      });
+    }
+
+    const assistantText = await getAssistantReply(conversationMessages, status);
+    const calendarLink = status === "hot" ? createGoogleCalendarLink(merged.location || "your selected area") : null;
+
+    const assistantMessage = calendarLink
+      ? `${assistantText}\n\nYou can book a property visit here: ${calendarLink}`
+      : assistantText;
+
+    await supabase.from("messages").insert({
+      lead_id: currentLeadId,
+      role: "assistant",
+      content: assistantMessage,
+    });
 
     return NextResponse.json({
       leadId: currentLeadId,

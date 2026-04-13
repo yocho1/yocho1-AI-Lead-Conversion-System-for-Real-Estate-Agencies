@@ -19,6 +19,10 @@ export interface Lead {
   location: string | null;
   property_type: string | null;
   buying_timeline: string | null;
+  preferred_visit_day: string | null;
+  preferred_visit_period: string | null;
+  appointment_status: "not_set" | "pending" | "reserved";
+  hot_alert_sent: boolean;
   status: LeadStatus;
   created_at: string;
 }

@@ -18,6 +18,10 @@ create table if not exists public.leads (
   property_type text,
   buying_timeline text,
   status text not null default 'cold' check (status in ('hot', 'warm', 'cold')),
+  preferred_visit_day text,
+  preferred_visit_period text,
+  appointment_status text not null default 'not_set' check (appointment_status in ('not_set', 'pending', 'reserved')),
+  hot_alert_sent boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -31,6 +35,8 @@ create table if not exists public.messages (
 
 create index if not exists idx_leads_agency_id on public.leads(agency_id);
 create index if not exists idx_messages_lead_id_timestamp on public.messages(lead_id, timestamp desc);
+create unique index if not exists idx_unique_lead_email_per_agency on public.leads(agency_id, email) where email is not null;
+create unique index if not exists idx_unique_lead_phone_per_agency on public.leads(agency_id, phone) where phone is not null;
 
 insert into public.agencies (name, api_key)
 values ('Demo Realty', 'demo-agency-key')
