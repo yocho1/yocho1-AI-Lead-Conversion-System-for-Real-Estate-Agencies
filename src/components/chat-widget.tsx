@@ -10,19 +10,48 @@ type UiMessage = {
 
 interface ChatWidgetProps {
   agencyApiKey: string;
+  demoMode?: boolean;
 }
 
-export function ChatWidget({ agencyApiKey }: ChatWidgetProps) {
+const demoConversation: UiMessage[] = [
+  {
+    role: "assistant",
+    content: "Hi, I can help you secure the best property deals fast. What area and budget are you targeting?",
+  },
+  {
+    role: "user",
+    content: "I need a 2-bedroom apartment in Dubai Marina around $550k. Timeline is this month.",
+  },
+  {
+    role: "assistant",
+    content:
+      "Perfect. Properties in that budget are moving fast this month. You're ready to visit. What day works best for you this week?",
+  },
+  {
+    role: "user",
+    content: "Thursday afternoon.",
+  },
+  {
+    role: "assistant",
+    content: "Great, I've reserved your visit slot for Thursday afternoon. I can now match your top 3 options.",
+  },
+];
+
+export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [leadId, setLeadId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<UiMessage[]>([
-    {
-      role: "assistant",
-      content:
-        "Hello, I can help you find the right property quickly. What location and budget are you considering?",
-    },
-  ]);
+  const [messages, setMessages] = useState<UiMessage[]>(
+    demoMode
+      ? demoConversation
+      : [
+          {
+            role: "assistant",
+            content:
+              "Hello, I can help you find the right property quickly. What location and budget are you considering?",
+          },
+        ],
+  );
   const [isTyping, setIsTyping] = useState(false);
 
   const canSend = useMemo(() => input.trim().length > 0 && !isTyping, [input, isTyping]);
@@ -138,6 +167,12 @@ export function ChatWidget({ agencyApiKey }: ChatWidgetProps) {
             Property Assistant
           </div>
 
+          {demoMode && (
+            <div style={{ padding: "0.45rem 0.75rem", background: "#ecfdf5", color: "#065f46", fontSize: "0.8rem" }}>
+              Demo mode preloaded: hot-lead booking scenario
+            </div>
+          )}
+
           <div style={{ height: "360px", overflowY: "auto", padding: "0.75rem" }}>
             {messages.map((message, index) => (
               <div
@@ -157,6 +192,8 @@ export function ChatWidget({ agencyApiKey }: ChatWidgetProps) {
                     lineHeight: 1.35,
                     background: message.role === "user" ? "#0f766e" : "#eef2ff",
                     color: message.role === "user" ? "#ecfeff" : "#23364d",
+                    whiteSpace: "pre-wrap",
+                    overflowWrap: "anywhere",
                   }}
                 >
                   {message.content}

@@ -4,10 +4,11 @@ import { ChatWidget } from "@/components/chat-widget";
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ agencyKey?: string }>;
+  searchParams: Promise<{ agencyKey?: string; demo?: string }>;
 }) {
   const params = await searchParams;
   const agencyApiKey = params.agencyKey || "demo-agency-key";
+  const demoMode = params.demo === "true";
 
   return (
     <main className="container" style={{ paddingBlock: "4rem" }}>
@@ -46,10 +47,25 @@ export default async function Home({
             Open CRM Dashboard
           </Link>
           <span style={{ color: "#4c617a", alignSelf: "center" }}>Agency key: {agencyApiKey}</span>
+          {demoMode && (
+            <span
+              style={{
+                color: "#065f46",
+                background: "#d1fae5",
+                border: "1px solid #86efac",
+                borderRadius: "999px",
+                padding: "0.3rem 0.7rem",
+                fontWeight: 700,
+                fontSize: "0.82rem",
+              }}
+            >
+              Demo Mode
+            </span>
+          )}
         </div>
       </section>
 
-      <ChatWidget agencyApiKey={agencyApiKey} />
+      <ChatWidget agencyApiKey={agencyApiKey} demoMode={demoMode} />
     </main>
   );
 }

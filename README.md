@@ -5,16 +5,22 @@ Production-ready MVP built with Next.js, Supabase, and OpenRouter to help real e
 ## Features
 
 - Floating chat widget (Intercom-style)
-- AI real estate sales assistant persona
-- Lead qualification (hot, warm, cold)
+- AI real estate sales assistant persona (conversion-focused)
+- Mandatory lead capture gate (name + phone/email)
+- Lead deduplication by email/phone per agency
+- Structured lead qualification (hot, warm, cold)
+- Sales-driven closing mode once budget/location/timeline are captured
+- Step-by-step appointment booking flow (day -> morning/afternoon -> reservation)
 - Multi-tenant agency isolation by API key
 - CRM dashboard with:
   - lead list
   - qualification status
   - conversation history
   - leads per day analytics
-- Appointment suggestion for hot leads (Google Calendar link)
+- hot/new visual highlighting
 - Auto follow-up endpoint for inactive leads
+- Hot lead alert system (Resend email)
+- Demo mode (`?demo=true`) with preloaded hot-lead flow
 - Vercel-ready Next.js project structure
 
 ## Tech Stack
@@ -71,6 +77,9 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openai/gpt-4o-mini
+RESEND_API_KEY=
+HOT_LEAD_ALERT_TO=
+HOT_LEAD_ALERT_FROM=onboarding@resend.dev
 APP_URL=http://localhost:3000
 FOLLOW_UP_DELAY_MINUTES=20
 ```
@@ -98,6 +107,7 @@ npm run dev
 Open:
 
 - App: `http://localhost:3000/?agencyKey=demo-agency-key`
+- Demo mode: `http://localhost:3000/?agencyKey=demo-agency-key&demo=true`
 - Dashboard: `http://localhost:3000/dashboard?agencyKey=demo-agency-key`
 
 ## API Endpoints
