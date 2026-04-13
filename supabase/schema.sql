@@ -33,6 +33,13 @@ create table if not exists public.messages (
   timestamp timestamptz not null default now()
 );
 
+alter table public.leads add column if not exists preferred_visit_day text;
+alter table public.leads add column if not exists preferred_visit_period text;
+alter table public.leads add column if not exists appointment_status text not null default 'not_set';
+alter table public.leads add column if not exists hot_alert_sent boolean not null default false;
+alter table public.leads drop constraint if exists leads_appointment_status_check;
+alter table public.leads add constraint leads_appointment_status_check check (appointment_status in ('not_set', 'pending', 'reserved'));
+
 create index if not exists idx_leads_agency_id on public.leads(agency_id);
 create index if not exists idx_messages_lead_id_timestamp on public.messages(lead_id, timestamp desc);
 create unique index if not exists idx_unique_lead_email_per_agency on public.leads(agency_id, email) where email is not null;

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createGoogleCalendarLink } from "@/lib/calendar";
+import {
+  buildDynamicCalendarLink,
+  extractPreferredVisitDay,
+  extractPreferredVisitPeriod,
+} from "@/lib/appointment";
 import {
   getMandatoryCaptureMessage,
   hasEnoughMessagesForMandatoryGate,
@@ -9,6 +13,11 @@ import {
 import { getAssistantReply } from "@/lib/ai";
 import { extractLeadSignals } from "@/lib/lead-parser";
 import { classifyLead } from "@/lib/qualification";
+import {
+  getMissingQualificationFields,
+  getNextQualificationQuestion,
+  shouldEnterClosingMode,
+} from "@/lib/sales-flow";
 import { getServerSupabase } from "@/lib/supabase";
 import type { LeadSignals, Message } from "@/lib/types";
 
@@ -96,7 +105,7 @@ export async function POST(request: Request) {
 
     const { data: lead } = await supabase
       .from("leads")
-      .select("name, email, phone, budget, location, property_type, buying_timeline")
+      .select("name, email, phone, budget, location, property_type, buying_timeline, preferred_visit_day, preferred_visit_period, appointment_status")
       .eq("id", currentLeadId)
       .single();
 
@@ -117,6 +126,10 @@ export async function POST(request: Request) {
     const merged = mergeSignals((lead || {}) as Record<string, string | null>, extracted);
     const mustCapture = isMandatoryInfoMissing(merged) && hasEnoughMessagesForMandatoryGate(userMessageCount);
     const status = mustCapture ? "cold" : classifyLead(merged);
+    const visitDay = extractPreferredVisitDay(message) || lead?.preferred_visit_day || null;
+    const visitPeriod = extractPreferredVisitPeriod(message) || lead?.preferred_visit_period || null;
+    const isClosingMode = shouldEnterClosingMode(merged);
+    const missingQualification = getMissingQualificationFields(merged);
 
     await supabase
       .from("leads")
@@ -128,6 +141,9 @@ export async function POST(request: Request) {
         location: merged.location || null,
         property_type: merged.propertyType || null,
         buying_timeline: merged.buyingTimeline || null,
+        preferred_visit_day: visitDay,
+        preferred_visit_period: visitPeriod,
+        appointment_status: visitDay && visitPeriod ? "reserved" : isClosingMode ? "pending" : "not_set",
         status,
       })
       .eq("id", currentLeadId);
@@ -149,12 +165,102 @@ export async function POST(request: Request) {
       });
     }
 
-    const assistantText = await getAssistantReply(conversationMessages, status);
-    const calendarLink = status === "hot" ? createGoogleCalendarLink(merged.location || "your selected area") : null;
+    const nextQualificationQuestion = getNextQualificationQuestion(missingQualification);
+    if (nextQualificationQuestion) {
+      await supabase.from("messages").insert({
+        lead_id: currentLeadId,
+        role: "assistant",
+        content: nextQualificationQuestion,
+      });
 
-    const assistantMessage = calendarLink
-      ? `${assistantText}\n\nYou can book a property visit here: ${calendarLink}`
-      : assistantText;
+      return NextResponse.json({
+        leadId: currentLeadId,
+        status,
+        assistantMessage: nextQualificationQuestion,
+      });
+    }
+
+    if (isClosingMode) {
+      if (!visitDay) {
+        const closingAskDay =
+          "Properties in your budget are moving fast this month. Perfect - you are ready to visit properties. What day works best for you this week?";
+
+        await supabase.from("messages").insert({
+          lead_id: currentLeadId,
+          role: "assistant",
+          content: closingAskDay,
+        });
+
+        return NextResponse.json({
+          leadId: currentLeadId,
+          status,
+          assistantMessage: closingAskDay,
+          closingMode: true,
+        });
+      }
+
+      if (!visitPeriod) {
+        const closingAskPeriod = "Great choice. Do you prefer a morning or afternoon property visit?";
+
+        await supabase.from("messages").insert({
+          lead_id: currentLeadId,
+          role: "assistant",
+          content: closingAskPeriod,
+        });
+
+        return NextResponse.json({
+          leadId: currentLeadId,
+          status,
+          assistantMessage: closingAskPeriod,
+          closingMode: true,
+        });
+      }
+
+      const locationForCalendar = merged.location || "your preferred location";
+      const calendarLink = buildDynamicCalendarLink(visitDay, visitPeriod, locationForCalendar);
+      const reservationMessage =
+        `Great, I have reserved a ${visitPeriod} slot on ${visitDay} for your property visits. ` +
+        `Please confirm with this calendar link: ${calendarLink}`;
+
+      await supabase.from("messages").insert({
+        lead_id: currentLeadId,
+        role: "assistant",
+        content: reservationMessage,
+      });
+
+      await supabase
+        .from("leads")
+        .update({
+          appointment_status: "reserved",
+          preferred_visit_day: visitDay,
+          preferred_visit_period: visitPeriod,
+        })
+        .eq("id", currentLeadId);
+
+      return NextResponse.json({
+        leadId: currentLeadId,
+        status,
+        assistantMessage: reservationMessage,
+        calendarLink,
+        closingMode: true,
+      });
+    }
+
+    const collectedFields = [
+      merged.name ? "name" : null,
+      merged.email || merged.phone ? "contact" : null,
+      merged.budget ? "budget" : null,
+      merged.location ? "location" : null,
+      merged.propertyType ? "property type" : null,
+      merged.buyingTimeline ? "timeline" : null,
+    ].filter(Boolean) as string[];
+
+    const assistantMessage = await getAssistantReply(conversationMessages, {
+      statusHint: status,
+      collectedFields,
+      missingFields: missingQualification,
+      closingMode: false,
+    });
 
     await supabase.from("messages").insert({
       lead_id: currentLeadId,
@@ -166,7 +272,6 @@ export async function POST(request: Request) {
       leadId: currentLeadId,
       status,
       assistantMessage,
-      calendarLink,
     });
   } catch {
     return NextResponse.json({ error: "Server error" }, { status: 500 });

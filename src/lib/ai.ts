@@ -2,6 +2,13 @@ import OpenAI from "openai";
 import { getAiEnv } from "@/lib/env";
 import type { Message } from "@/lib/types";
 
+type AssistantContext = {
+  statusHint: "hot" | "warm" | "cold";
+  collectedFields: string[];
+  missingFields: string[];
+  closingMode: boolean;
+};
+
 function getOpenAIClient() {
   const env = getAiEnv();
   return new OpenAI({
@@ -14,23 +21,38 @@ function getOpenAIClient() {
   });
 }
 
-const assistantPersona = `You are an elite real estate sales assistant for a property agency.
-Tone rules:
-- Professional, concise, and persuasive.
-- Never sound like a generic chatbot.
-- Focus on qualifying the lead and moving toward booking a property visit.
-- Ask at most one follow-up question each turn.
-Required fields to collect: name, email or phone, budget, preferred location, property type, buying timeline.
-When the lead appears serious and complete, suggest booking a visit.`;
+const assistantPersona = `You are a high-converting real estate sales assistant.
+Role:
+- Real estate sales assistant focused on qualification and booked visits.
+Tone:
+- Confident, concise, natural, and helpful.
+Behavior:
+- Ask exactly ONE question per reply.
+- Never use generic chatbot language.
+- Silently correct obvious user spelling mistakes in your understanding.
+- Do not repeat awkward phrases or ask for data already collected.
+- Keep each answer short and conversion-focused.
+Sales objective:
+- Qualify lead quality quickly.
+- Move serious buyers toward booked property visits.
+- When in closing mode, create urgency and push for booking.`;
 
-export async function getAssistantReply(messages: Message[], statusHint: "hot" | "warm" | "cold") {
+export async function getAssistantReply(messages: Message[], context: AssistantContext) {
   const openai = getOpenAIClient();
   const env = getAiEnv();
   const completion = await openai.chat.completions.create({
     model: env.openrouterModel,
     temperature: 0.4,
     messages: [
-      { role: "system", content: `${assistantPersona}\nCurrent lead status: ${statusHint}.` },
+      {
+        role: "system",
+        content:
+          `${assistantPersona}\n` +
+          `Current lead status: ${context.statusHint}.\n` +
+          `Collected fields: ${context.collectedFields.join(", ") || "none"}.\n` +
+          `Missing fields: ${context.missingFields.join(", ") || "none"}.\n` +
+          `Closing mode: ${context.closingMode ? "yes" : "no"}.`,
+      },
       ...messages.map((message) => ({
         role: message.role,
         content: message.content,

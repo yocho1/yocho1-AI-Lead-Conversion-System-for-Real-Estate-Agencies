@@ -24,7 +24,7 @@ export function extractLeadSignals(input: string): LeadSignals {
   const phone = input.match(phoneRegex)?.[0];
   if (phone) lead.phone = phone.trim();
 
-  const budgetMatch = input.match(/\$?\s?\d{2,3}[\d,]*(?:\s?(k|m|million))?/i);
+  const budgetMatch = input.match(/\$?\s?\d+(?:[.,]\d+)?(?:\s?(k|m|million))?/i);
   if (budgetMatch) lead.budget = budgetMatch[0];
 
   const locationMatch = input.match(/(?:in|around|near)\s+([a-zA-Z\s-]{2,40})/i);
