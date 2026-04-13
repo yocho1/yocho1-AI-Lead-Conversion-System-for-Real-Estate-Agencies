@@ -1,10 +1,17 @@
 import OpenAI from "openai";
-import { getServerEnv } from "@/lib/env";
+import { getAiEnv } from "@/lib/env";
 import type { Message } from "@/lib/types";
 
 function getOpenAIClient() {
-  const env = getServerEnv();
-  return new OpenAI({ apiKey: env.openaiApiKey });
+  const env = getAiEnv();
+  return new OpenAI({
+    apiKey: env.openrouterApiKey,
+    baseURL: "https://openrouter.ai/api/v1",
+    defaultHeaders: {
+      "HTTP-Referer": env.appUrl,
+      "X-Title": "AI Lead Conversion System",
+    },
+  });
 }
 
 const assistantPersona = `You are an elite real estate sales assistant for a property agency.
@@ -18,8 +25,9 @@ When the lead appears serious and complete, suggest booking a visit.`;
 
 export async function getAssistantReply(messages: Message[], statusHint: "hot" | "warm" | "cold") {
   const openai = getOpenAIClient();
+  const env = getAiEnv();
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: env.openrouterModel,
     temperature: 0.4,
     messages: [
       { role: "system", content: `${assistantPersona}\nCurrent lead status: ${statusHint}.` },
@@ -35,8 +43,9 @@ export async function getAssistantReply(messages: Message[], statusHint: "hot" |
 
 export async function generateFollowUpMessage(location: string | null) {
   const openai = getOpenAIClient();
+  const env = getAiEnv();
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: env.openrouterModel,
     temperature: 0.5,
     messages: [
       {

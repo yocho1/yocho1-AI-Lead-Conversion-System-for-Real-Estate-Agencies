@@ -83,6 +83,21 @@ a {
   gap: 1rem;
 }
 
+.conversation-scroll {
+  max-height: 430px;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.conversation-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.conversation-scroll::-webkit-scrollbar-thumb {
+  background: #c9d3e4;
+  border-radius: 999px;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;

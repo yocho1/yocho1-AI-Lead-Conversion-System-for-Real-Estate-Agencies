@@ -1,6 +1,6 @@
 # AI Lead Conversion System for Real Estate Agencies
 
-Production-ready MVP built with Next.js, Supabase, and OpenAI to help real estate agencies capture, qualify, and convert leads.
+Production-ready MVP built with Next.js, Supabase, and OpenRouter to help real estate agencies capture, qualify, and convert leads.
 
 ## Features
 
@@ -22,7 +22,7 @@ Production-ready MVP built with Next.js, Supabase, and OpenAI to help real estat
 - Frontend: Next.js (App Router) + React + TypeScript
 - Backend: Next.js API routes
 - Database: Supabase (PostgreSQL)
-- AI: OpenAI (`gpt-4o-mini`, configurable in code)
+- AI: OpenRouter (`openai/gpt-4o-mini` by default, configurable in env)
 - Deployment: Vercel
 
 ## Project Structure
@@ -67,9 +67,10 @@ Copy `.env.example` to `.env.local` and fill values:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-OPENAI_API_KEY=
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL=openai/gpt-4o-mini
 APP_URL=http://localhost:3000
 FOLLOW_UP_DELAY_MINUTES=20
 ```
@@ -78,7 +79,14 @@ FOLLOW_UP_DELAY_MINUTES=20
 
 1. Create a Supabase project.
 2. Open SQL editor and run [supabase/schema.sql](supabase/schema.sql).
-3. Confirm a demo agency exists with API key `demo-agency-key`.
+3. In Settings -> API, copy:
+
+- Project URL -> `NEXT_PUBLIC_SUPABASE_URL`
+- Publishable key -> `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- service_role secret -> `SUPABASE_SERVICE_ROLE_KEY` (server-side only)
+
+4. Confirm a demo agency exists with API key `demo-agency-key`.
+5. Verify integration with `GET /api/health/supabase` and expect `{ "ok": true, ... }`.
 
 ## Local Development
 
@@ -110,6 +118,9 @@ Open:
 
 - `GET /api/analytics/leads-per-day?agencyApiKey=...`
   - Returns simple daily lead counts
+
+- `GET /api/health/supabase`
+  - Verifies server can reach Supabase and query `agencies`
 
 ## Multi-Tenant Model
 

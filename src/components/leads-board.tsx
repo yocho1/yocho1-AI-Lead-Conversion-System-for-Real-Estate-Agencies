@@ -22,6 +22,29 @@ type ConversationMessage = {
   timestamp: string;
 };
 
+function renderMessageContent(content: string) {
+  const parts = content.split(/(https?:\/\/\S+)/g);
+
+  return parts.map((part, index) => {
+    const isLink = /^https?:\/\//.test(part);
+    if (!isLink) {
+      return <span key={`text-${index}`}>{part}</span>;
+    }
+
+    return (
+      <a
+        key={`link-${index}`}
+        href={part}
+        target="_blank"
+        rel="noreferrer"
+        style={{ color: "#0f766e", textDecoration: "underline", wordBreak: "break-all" }}
+      >
+        {part}
+      </a>
+    );
+  });
+}
+
 export function LeadsBoard({ agencyApiKey }: { agencyApiKey: string }) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
@@ -84,7 +107,9 @@ export function LeadsBoard({ agencyApiKey }: { agencyApiKey: string }) {
                   <td>
                     <span className={`badge badge-${lead.status}`}>{lead.status}</span>
                   </td>
-                  <td>{lead.location || "-"}</td>
+                  <td style={{ maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={lead.location || "-"}>
+                    {lead.location || "-"}
+                  </td>
                   <td>{lead.budget || "-"}</td>
                   <td>{new Date(lead.created_at).toLocaleString()}</td>
                 </tr>
@@ -98,20 +123,22 @@ export function LeadsBoard({ agencyApiKey }: { agencyApiKey: string }) {
         <h3 style={{ marginTop: 0 }}>Conversation</h3>
         {!selectedLeadId && <p style={{ color: "#4c617a" }}>Select a lead to see conversation history.</p>}
         {selectedLeadId && (
-          <div style={{ display: "grid", gap: "0.55rem" }}>
+          <div className="conversation-scroll" style={{ display: "grid", gap: "0.55rem" }}>
             {messages.map((message) => (
               <div
                 key={message.id}
                 style={{
                   justifySelf: message.role === "user" ? "end" : "start",
-                  maxWidth: "88%",
+                  maxWidth: "100%",
                   background: message.role === "user" ? "#d8f4ef" : "#eef2ff",
                   borderRadius: "11px",
                   padding: "0.55rem 0.7rem",
+                  overflowWrap: "anywhere",
+                  wordBreak: "break-word",
                 }}
               >
                 <div style={{ fontSize: "0.8rem", color: "#4c617a", marginBottom: "0.2rem" }}>{message.role}</div>
-                <div style={{ fontSize: "0.9rem" }}>{message.content}</div>
+                <div style={{ fontSize: "0.9rem", lineHeight: 1.45 }}>{renderMessageContent(message.content)}</div>
               </div>
             ))}
           </div>
