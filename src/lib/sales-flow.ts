@@ -29,6 +29,26 @@ export function getNextQualificationQuestion(missingFields: string[]) {
   return null;
 }
 
+export function getRepeatedQuestionSafeVariant(field: string) {
+  if (field === "budget") {
+    return "To shortlist serious options now, what budget range should I target?";
+  }
+
+  if (field === "location") {
+    return "Which exact area should I prioritize for your visit shortlist?";
+  }
+
+  if (field === "property type") {
+    return "Quick one: are you focused on villas, apartments, or another property type?";
+  }
+
+  if (field === "timeline") {
+    return "When do you want to close this purchase, approximately?";
+  }
+
+  return "Could you share one more detail so I can continue with matching?";
+}
+
 export function shouldEnterClosingMode(signals: LeadSignals) {
   return Boolean(signals.budget && signals.location && signals.buyingTimeline);
 }

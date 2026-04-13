@@ -12,6 +12,7 @@ type Lead = {
   property_type: string | null;
   buying_timeline: string | null;
   status: "hot" | "warm" | "cold";
+  hot_alert_sent: boolean;
   created_at: string;
 };
 
@@ -50,6 +51,7 @@ export function LeadsBoard({ agencyApiKey }: { agencyApiKey: string }) {
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [nowTs] = useState(() => Date.now());
 
   useEffect(() => {
     const fetchLeads = async () => {
@@ -100,10 +102,33 @@ export function LeadsBoard({ agencyApiKey }: { agencyApiKey: string }) {
                   style={{
                     borderTop: "1px solid #edf1f7",
                     cursor: "pointer",
-                    background: selectedLeadId === lead.id ? "#f1f7ff" : "transparent",
+                    background:
+                      selectedLeadId === lead.id
+                        ? "#f1f7ff"
+                        : lead.status === "hot"
+                          ? "#fff7f7"
+                          : "transparent",
                   }}
                 >
-                  <td style={{ padding: "0.65rem 0" }}>{lead.name || "Unknown"}</td>
+                  <td style={{ padding: "0.65rem 0" }}>
+                    {lead.name || "Unknown"}
+                    {nowTs - new Date(lead.created_at).getTime() < 1000 * 60 * 20 && (
+                      <span
+                        style={{
+                          marginLeft: "0.45rem",
+                          fontSize: "0.72rem",
+                          color: "#0f766e",
+                          border: "1px solid #9ee5da",
+                          background: "#dcfce7",
+                          padding: "0.05rem 0.35rem",
+                          borderRadius: "999px",
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        New
+                      </span>
+                    )}
+                  </td>
                   <td>
                     <span className={`badge badge-${lead.status}`}>{lead.status}</span>
                   </td>

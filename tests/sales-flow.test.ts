@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { extractPreferredVisitDay, extractPreferredVisitPeriod } from "@/lib/appointment";
 import {
+  getRepeatedQuestionSafeVariant,
   getMissingQualificationFields,
   getNextQualificationQuestion,
   shouldEnterClosingMode,
@@ -23,6 +24,11 @@ describe("sales flow", () => {
   it("returns deterministic next qualification question", () => {
     const question = getNextQualificationQuestion(["budget", "location"]);
     expect(question?.toLowerCase()).toContain("budget");
+  });
+
+  it("provides alternate phrasing for repeated prompts", () => {
+    const alt = getRepeatedQuestionSafeVariant("location");
+    expect(alt.toLowerCase()).toContain("area");
   });
 });
 

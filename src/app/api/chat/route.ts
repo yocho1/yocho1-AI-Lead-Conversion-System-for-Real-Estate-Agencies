@@ -14,10 +14,12 @@ import { getAssistantReply } from "@/lib/ai";
 import { extractLeadSignals } from "@/lib/lead-parser";
 import { classifyLead } from "@/lib/qualification";
 import {
+  getRepeatedQuestionSafeVariant,
   getMissingQualificationFields,
   getNextQualificationQuestion,
   shouldEnterClosingMode,
 } from "@/lib/sales-flow";
+import { sendHotLeadAlertEmail } from "@/lib/notifications";
 import { getServerSupabase } from "@/lib/supabase";
 import type { LeadSignals, Message } from "@/lib/types";
 
@@ -105,7 +107,7 @@ export async function POST(request: Request) {
 
     const { data: lead } = await supabase
       .from("leads")
-      .select("name, email, phone, budget, location, property_type, buying_timeline, preferred_visit_day, preferred_visit_period, appointment_status")
+      .select("name, email, phone, budget, location, property_type, buying_timeline, preferred_visit_day, preferred_visit_period, appointment_status, hot_alert_sent")
       .eq("id", currentLeadId)
       .single();
 
@@ -165,8 +167,23 @@ export async function POST(request: Request) {
       });
     }
 
-    const nextQualificationQuestion = getNextQualificationQuestion(missingQualification);
+    let nextQualificationQuestion = getNextQualificationQuestion(missingQualification);
     if (nextQualificationQuestion) {
+      const assistantMessages = conversationMessages
+        .filter((entry) => entry.role === "assistant")
+        .map((entry) => entry.content.toLowerCase());
+      const primaryField = missingQualification[0] || "budget";
+
+      const alreadyAskedSimilar = assistantMessages.some((content) =>
+        primaryField === "property type"
+          ? content.includes("property type") || content.includes("villa") || content.includes("apartment")
+          : content.includes(primaryField),
+      );
+
+      if (alreadyAskedSimilar) {
+        nextQualificationQuestion = getRepeatedQuestionSafeVariant(primaryField);
+      }
+
       await supabase.from("messages").insert({
         lead_id: currentLeadId,
         role: "assistant",
@@ -267,6 +284,24 @@ export async function POST(request: Request) {
       role: "assistant",
       content: assistantMessage,
     });
+
+    if (status === "hot" && !lead?.hot_alert_sent) {
+      const alert = await sendHotLeadAlertEmail({
+        name: merged.name,
+        budget: merged.budget,
+        location: merged.location,
+        timeline: merged.buyingTimeline,
+      });
+
+      if (alert.sent) {
+        await supabase
+          .from("leads")
+          .update({
+            hot_alert_sent: true,
+          })
+          .eq("id", currentLeadId);
+      }
+    }
 
     return NextResponse.json({
       leadId: currentLeadId,

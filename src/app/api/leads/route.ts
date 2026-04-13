@@ -18,7 +18,7 @@ export async function GET(request: Request) {
 
   const { data: leads, error } = await supabase
     .from("leads")
-    .select("id, name, email, phone, budget, location, property_type, buying_timeline, status, created_at")
+    .select("id, name, email, phone, budget, location, property_type, buying_timeline, appointment_status, status, hot_alert_sent, created_at")
     .eq("agency_id", agency.id)
     .order("created_at", { ascending: false });
 
