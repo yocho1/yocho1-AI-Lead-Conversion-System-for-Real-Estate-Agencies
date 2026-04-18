@@ -155,6 +155,12 @@ def build_hot_lead_message(lead: dict) -> str:
 
 
 async def send_hot_lead_notification(agency_id: str, lead: dict, event_id: str) -> None:
+    idempotency_key = f"idempotency:whatsapp:{event_id}"
+    locked = redis_client.set(idempotency_key, "1", nx=True, ex=60 * 60 * 24)
+    if not locked:
+        log_event(agency_id, lead["id"], HOT_EVENT, "duplicate", "Duplicate notification prevented by event_id", event_id=event_id)
+        return
+
     if lead.get("whatsapp_sent"):
         log_event(agency_id, lead["id"], HOT_EVENT, "ignored", "Notification already sent", event_id=event_id)
         return
@@ -167,6 +173,7 @@ async def send_hot_lead_notification(agency_id: str, lead: dict, event_id: str) 
     provider = resolve_provider("whatsapp", agency_id)
     response = await provider.send(build_hot_lead_message(lead), recipient)
     if not response.ok:
+        redis_client.delete(idempotency_key)
         raise RuntimeError(response.message)
 
     (
