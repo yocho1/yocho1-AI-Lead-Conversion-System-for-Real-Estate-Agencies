@@ -4,6 +4,7 @@ import { getServerSupabase } from "@/lib/supabase";
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const agencyApiKey = searchParams.get("agencyApiKey");
+  const demoMode = searchParams.get("demo") === "true";
 
   if (!agencyApiKey) {
     return NextResponse.json({ error: "Missing agencyApiKey" }, { status: 400 });
@@ -18,13 +19,40 @@ export async function GET(request: Request) {
 
   const { data: leads, error } = await supabase
     .from("leads")
-    .select("id, name, email, phone, budget, location, property_type, buying_timeline, appointment_status, status, hot_alert_sent, created_at")
+    .select("id, name, email, phone, budget, budget_value, currency, location, location_city, location_country, property_type, buying_timeline, timeline_normalized, appointment_status, status, hot_alert_sent, chat_locked, last_message_at, created_at")
     .eq("agency_id", agency.id)
-    .order("created_at", { ascending: false });
+    .order("last_message_at", { ascending: false });
 
   if (error) {
     return NextResponse.json({ error: "Unable to load leads" }, { status: 500 });
   }
 
-  return NextResponse.json({ leads: leads || [] });
+  if (!demoMode) {
+    return NextResponse.json({ leads: leads || [] });
+  }
+
+  const demoLeads = [
+    {
+      id: "demo-hot-lead",
+      name: "Nadia Salem",
+      email: "nadia.demo@lead.ai",
+      phone: "+971500000111",
+      budget: "650000",
+      budget_value: 650000,
+      currency: "USD",
+      location: "Dubai Marina",
+      location_city: "Dubai Marina",
+      location_country: "United Arab Emirates",
+      property_type: "apartment",
+      buying_timeline: "asap",
+      timeline_normalized: "asap",
+      appointment_status: "reserved",
+      status: "hot",
+      hot_alert_sent: true,
+      chat_locked: true,
+      created_at: new Date().toISOString(),
+    },
+  ];
+
+  return NextResponse.json({ leads: [...demoLeads, ...(leads || [])] });
 }

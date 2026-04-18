@@ -15,7 +15,7 @@ export async function sendHotLeadAlertEmail(payload: HotLeadPayload) {
   }
 
   const text = [
-    "🔥 New HOT lead",
+    "🔥 HOT LEAD:",
     `Name: ${payload.name || "Unknown"}`,
     `Budget: ${payload.budget || "N/A"}`,
     `Location: ${payload.location || "N/A"}`,
@@ -31,7 +31,7 @@ export async function sendHotLeadAlertEmail(payload: HotLeadPayload) {
     body: JSON.stringify({
       from,
       to: [to],
-      subject: "🔥 New HOT lead",
+      subject: "🔥 HOT LEAD",
       text,
     }),
   });
