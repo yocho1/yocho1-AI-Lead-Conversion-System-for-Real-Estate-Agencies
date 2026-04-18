@@ -158,6 +158,130 @@ Example `vercel.json` cron (optional):
 }
 ```
 
+## Event-Driven Backend (FastAPI + Redis Worker)
+
+For high-throughput lead ingestion and non-blocking notification delivery, a separate backend service is available under [backend/](backend/).
+
+Architecture:
+
+- Frontend -> FastAPI API -> Supabase
+- FastAPI emits events -> Redis queue
+- Worker consumes queue -> WhatsApp/Email providers
+- Outbox + logs in Supabase ensure retries and observability
+
+### Why this design
+
+- API requests stay fast (no synchronous WhatsApp calls)
+- Worker retries failures (up to 3 attempts)
+- Event outbox prevents silent event loss
+- Multi-tenant isolation enforced by `agency_id`
+- Demo tenant (`demo-agency-key`) routes to `events:test`
+
+### Production Hardening
+
+- Event state machine: `queued -> processing -> success -> failed -> retrying -> dead_letter`
+- Idempotency:
+  - `events.event_id` unique
+  - `events(agency_id, lead_id, event_type)` unique (when `lead_id` is not null)
+- Provider abstraction:
+  - `NotificationProvider`
+  - `WhatsAppProvider`, `EmailProvider`, `SMSProvider`, `TestProvider`
+- Retry safety:
+  - exponential-ish backoff (`2s`, `5s`, `12s`)
+  - DLQ promotion after max attempts
+- Observability:
+  - `event_logs` row per receive/process/provider/retry/DLQ action
+- Rate limiting:
+  - per-tenant per-channel Redis counter (`MAX_NOTIFICATIONS_PER_SECOND`)
+
+### Text Architecture Diagram
+
+```text
+Client/API consumer
+   |
+   v
+FastAPI (/v1/leads)
+   | validate + persist lead
+   v
+events table (status=queued, attempts=0)
+   |
+   +--> event_outbox (pending)
+            |
+            v
+      Redis queue (events:main | events:test)
+            |
+            v
+      Worker processor
+        - idempotency check (event_id/status)
+        - mark processing
+        - enforce tenant rate limit
+        - resolve provider by tenant/channel
+        - send notification
+        - mark success/failure/retrying/dead_letter
+            |
+            +--> event_logs
+            +--> dead_letter_queue (after max retries)
+```
+
+### Files
+
+- API: [backend/app/main.py](backend/app/main.py)
+- Queue: [backend/app/queue.py](backend/app/queue.py)
+- Outbox + logs: [backend/app/outbox.py](backend/app/outbox.py), [backend/app/logging_store.py](backend/app/logging_store.py)
+- Event store and lifecycle: [backend/app/event_store.py](backend/app/event_store.py)
+- Providers: [backend/app/providers.py](backend/app/providers.py)
+- Tenant rate limiting: [backend/app/rate_limiter.py](backend/app/rate_limiter.py)
+- Worker: [backend/worker/processor.py](backend/worker/processor.py), [backend/worker/run_worker.py](backend/worker/run_worker.py)
+- Outbox dispatcher: [backend/scripts/dispatch_outbox.py](backend/scripts/dispatch_outbox.py)
+- Event schema migrations: [supabase/migrations/20260416194500_event_queue_tables.sql](supabase/migrations/20260416194500_event_queue_tables.sql), [supabase/migrations/20260416201000_event_reliability_upgrade.sql](supabase/migrations/20260416201000_event_reliability_upgrade.sql)
+
+### Env Vars (backend service)
+
+Use existing Supabase vars and add:
+
+```bash
+REDIS_URL=redis://localhost:6379/0
+WHATSAPP_API_URL=https://your-whatsapp-provider/send
+WHATSAPP_API_KEY=
+EMAIL_API_URL=
+EMAIL_API_KEY=
+SMS_API_URL=
+SMS_API_KEY=
+TENANT_PROVIDER_OVERRIDES={"agency-1":{"whatsapp":"test","email":"email"}}
+MAX_NOTIFICATIONS_PER_SECOND=5
+DEFAULT_CURRENCY=USD
+```
+
+### Run
+
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+Worker:
+
+```bash
+cd backend
+.venv\Scripts\activate
+python -m worker.run_worker
+```
+
+Demo-only worker:
+
+```bash
+python -m worker.run_worker --demo
+```
+
+Outbox replay (cron-safe):
+
+```bash
+python scripts/dispatch_outbox.py
+```
+
 ## Sprint Plan and Git Workflow
 
 Use this exact sequence and do not start a new sprint until tests pass and code is pushed.
