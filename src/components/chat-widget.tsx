@@ -53,8 +53,9 @@ export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) 
         ],
   );
   const [isTyping, setIsTyping] = useState(false);
+  const [chatLocked, setChatLocked] = useState(false);
 
-  const canSend = useMemo(() => input.trim().length > 0 && !isTyping, [input, isTyping]);
+  const canSend = useMemo(() => input.trim().length > 0 && !isTyping && !chatLocked, [input, isTyping, chatLocked]);
 
   const streamAssistant = (text: string) => {
     let index = 0;
@@ -92,6 +93,7 @@ export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) 
           agencyApiKey,
           leadId,
           message: userMessage,
+          demoMode,
         }),
       });
 
@@ -102,6 +104,10 @@ export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) 
 
       if (data.leadId) {
         setLeadId(data.leadId);
+      }
+
+      if (data.chatLocked) {
+        setChatLocked(true);
       }
 
       streamAssistant(data.assistantMessage);
@@ -129,10 +135,10 @@ export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) 
           width: "64px",
           height: "64px",
           borderRadius: "999px",
-          background: "linear-gradient(130deg, #0f766e, #115e59)",
-          color: "#fff",
+          background: "linear-gradient(130deg, var(--cta), var(--cta-dark))",
+          color: "#fff7ed",
           border: "none",
-          boxShadow: "0 10px 30px rgba(17, 94, 89, 0.45)",
+          boxShadow: "0 10px 30px color-mix(in srgb, var(--cta) 45%, transparent)",
           cursor: "pointer",
           zIndex: 40,
         }}
@@ -148,10 +154,11 @@ export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) 
             right: "1.25rem",
             bottom: "6rem",
             width: "min(390px, calc(100vw - 2rem))",
-            background: "#fff",
+            background: "color-mix(in srgb, var(--surface) 88%, transparent)",
             borderRadius: "18px",
-            border: "1px solid #d6deea",
+            border: "1px solid color-mix(in srgb, var(--border) 84%, transparent)",
             boxShadow: "0 20px 45px rgba(13, 36, 64, 0.18)",
+            backdropFilter: "blur(10px)",
             overflow: "hidden",
             zIndex: 40,
           }}
@@ -159,8 +166,8 @@ export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) 
           <div
             style={{
               padding: "0.9rem 1rem",
-              background: "linear-gradient(120deg, #0f766e, #0f4f56)",
-              color: "#ecfeff",
+              background: "linear-gradient(120deg, var(--secondary), #8b5cf6)",
+              color: "#eef2ff",
               fontWeight: 600,
             }}
           >
@@ -168,7 +175,14 @@ export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) 
           </div>
 
           {demoMode && (
-            <div style={{ padding: "0.45rem 0.75rem", background: "#ecfdf5", color: "#065f46", fontSize: "0.8rem" }}>
+            <div
+              style={{
+                padding: "0.45rem 0.75rem",
+                background: "color-mix(in srgb, var(--cta) 18%, transparent)",
+                color: "var(--text)",
+                fontSize: "0.8rem",
+              }}
+            >
               Demo mode preloaded: hot-lead booking scenario
             </div>
           )}
@@ -190,8 +204,11 @@ export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) 
                     borderRadius: "12px",
                     fontSize: "0.92rem",
                     lineHeight: 1.35,
-                    background: message.role === "user" ? "#0f766e" : "#eef2ff",
-                    color: message.role === "user" ? "#ecfeff" : "#23364d",
+                    background:
+                      message.role === "user"
+                        ? "linear-gradient(120deg, var(--secondary), var(--primary))"
+                        : "color-mix(in srgb, var(--surface-3) 80%, var(--surface))",
+                    color: message.role === "user" ? "#eff6ff" : "var(--text)",
                     whiteSpace: "pre-wrap",
                     overflowWrap: "anywhere",
                   }}
@@ -200,17 +217,20 @@ export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) 
                 </div>
               </div>
             ))}
-            {isTyping && <div style={{ fontSize: "0.85rem", color: "#4c617a" }}>Assistant is typing...</div>}
+            {isTyping && <div style={{ fontSize: "0.85rem", color: "var(--text-soft)" }}>Assistant is typing...</div>}
           </div>
 
-          <form onSubmit={onSubmit} style={{ borderTop: "1px solid #e4e9f3", display: "flex", padding: "0.6rem" }}>
+          <form onSubmit={onSubmit} style={{ borderTop: "1px solid var(--border)", display: "flex", padding: "0.6rem" }}>
             <input
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Type your message..."
+              placeholder={chatLocked ? "Visit confirmed. Chat is now closed." : "Type your message..."}
+              disabled={chatLocked}
               style={{
                 flex: 1,
-                border: "1px solid #d6deea",
+                border: "1px solid var(--border)",
+                background: "var(--surface)",
+                color: "var(--text)",
                 borderRadius: "11px",
                 padding: "0.55rem 0.7rem",
                 fontSize: "0.9rem",
@@ -224,7 +244,7 @@ export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) 
                 border: "none",
                 borderRadius: "10px",
                 width: "40px",
-                background: canSend ? "#0f766e" : "#94a3b8",
+                background: canSend ? "linear-gradient(120deg, var(--cta), var(--cta-dark))" : "#94a3b8",
                 color: "#fff",
                 cursor: canSend ? "pointer" : "not-allowed",
               }}

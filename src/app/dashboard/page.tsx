@@ -1,21 +1,34 @@
-import { DashboardShell } from "@/components/dashboard-shell";
-import { AnalyticsCard } from "@/components/analytics-card";
-import { LeadsBoard } from "@/components/leads-board";
+"use client";
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ agencyKey?: string }>;
-}) {
-  const params = await searchParams;
+import { DashboardShell } from "@/components/dashboard-shell";
+import { AnalyticsCard, type AnalyticsLead } from "@/components/analytics-card";
+import { LeadsBoard } from "@/components/leads-board";
+import { ChatPreviewPanel } from "@/components/chat-preview-panel";
+import { HotLeadsFocus } from "@/components/hot-leads-focus";
+import { LiveActivityFeed } from "@/components/live-activity-feed";
+import { AIPerformanceBlock } from "@/components/ai-performance-block";
+import { use, useState } from "react";
+
+type DashboardPageProps = Readonly<{
+  searchParams: Promise<{ agencyKey?: string; demo?: string }>;
+}>;
+
+export default function DashboardPage(props: DashboardPageProps) {
+  const params = use(props.searchParams);
   const agencyApiKey = params.agencyKey || "demo-agency-key";
+  const demoMode = params.demo === "true";
+  const [analyticsLeads, setAnalyticsLeads] = useState<AnalyticsLead[]>([]);
 
   return (
     <DashboardShell>
-      <h1 style={{ marginTop: "0.15rem" }}>Lead Dashboard</h1>
-      <p style={{ color: "#4c617a" }}>Monitor incoming leads, qualification, and conversation history.</p>
-      <AnalyticsCard agencyApiKey={agencyApiKey} />
-      <LeadsBoard agencyApiKey={agencyApiKey} />
+      <h1 className="dashboard-title">Dashboard</h1>
+      <p className="dashboard-subtitle">Monitor lead velocity, conversion momentum, and AI-driven qualification in one enterprise command center.</p>
+      <AnalyticsCard agencyApiKey={agencyApiKey} demoMode={demoMode} onLeadsLoaded={setAnalyticsLeads} />
+      <LiveActivityFeed leads={analyticsLeads} />
+      <AIPerformanceBlock />
+      <HotLeadsFocus leads={analyticsLeads} />
+      <ChatPreviewPanel />
+      <LeadsBoard agencyApiKey={agencyApiKey} demoMode={demoMode} />
     </DashboardShell>
   );
 }
