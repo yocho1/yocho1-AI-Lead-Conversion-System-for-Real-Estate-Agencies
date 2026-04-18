@@ -247,6 +247,7 @@ export async function POST(request: Request) {
 
     await supabase.from("messages").insert({
       lead_id: currentLeadId,
+      sender: "user",
       role: "user",
       content: message,
     });
@@ -269,6 +270,7 @@ export async function POST(request: Request) {
 
       await supabase.from("messages").insert({
         lead_id: currentLeadId,
+        sender: "ai",
         role: "assistant",
         content: finalLockedMessage,
       });
@@ -381,6 +383,7 @@ export async function POST(request: Request) {
 
     await supabase.from("messages").insert({
       lead_id: currentLeadId,
+      sender: "ai",
       role: "assistant",
       content: assistantMessage,
     });
