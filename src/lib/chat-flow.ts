@@ -1,7 +1,15 @@
 import type { LeadSignals } from "@/lib/types";
 
+function hasFullName(name?: string) {
+  if (!name) return false;
+  return name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length >= 2;
+}
+
 export function isMandatoryInfoMissing(signals: LeadSignals) {
-  return !signals.name || !(signals.email || signals.phone);
+  return !hasFullName(signals.name) || !(signals.email || signals.phone);
 }
 
 export function getMandatoryCaptureMessage(signals: LeadSignals) {

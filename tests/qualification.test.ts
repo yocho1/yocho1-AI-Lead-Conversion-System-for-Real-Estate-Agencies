@@ -44,4 +44,44 @@ describe("lead parser", () => {
     expect(signals.location?.toLowerCase()).toContain("downtown");
     expect(signals.email).toBe("sarah@mail.com");
   });
+
+  it("extracts full name from comma-separated contact input", () => {
+    const raw = "achraf lachgar, achraf@gmail.com, 0674332123";
+    const signals = extractLeadSignals(raw);
+
+    expect(signals.name?.toLowerCase()).toBe("achraf lachgar");
+    expect(signals.email).toBe("achraf@gmail.com");
+    expect(signals.phone).toContain("0674332123");
+  });
+
+  it("extracts standalone location replies", () => {
+    expect(extractLeadSignals("france").location?.toLowerCase()).toBe("france");
+    expect(extractLeadSignals("paris").location?.toLowerCase()).toBe("paris");
+  });
+
+  it("extracts timeline from short buyer intent replies", () => {
+    expect(extractLeadSignals("buy").buyingTimeline).toBe("soon");
+    expect(extractLeadSignals("I wanna buy").buyingTimeline).toBe("soon");
+    expect(extractLeadSignals("move").buyingTimeline).toBe("soon");
+  });
+
+  it("does not parse phone numbers as budget", () => {
+    const signals = extractLeadSignals("0675432345");
+    expect(signals.budget).toBeUndefined();
+  });
+
+  it("allows one-word standalone location but rejects multi-word names", () => {
+    expect(extractLeadSignals("france").location?.toLowerCase()).toBe("france");
+    expect(extractLeadSignals("achraf lachgar").location).toBeUndefined();
+  });
+
+  it("extracts location correctly from '<location> and <budget>' format", () => {
+    const signals = extractLeadSignals("spain and 700K");
+    expect(signals.location?.toLowerCase()).toBe("spain");
+  });
+
+  it("does not parse confirmation words as location", () => {
+    expect(extractLeadSignals("okay").location).toBeUndefined();
+    expect(extractLeadSignals("ok").location).toBeUndefined();
+  });
 });

@@ -50,5 +50,5 @@ export function getRepeatedQuestionSafeVariant(field: string) {
 }
 
 export function shouldEnterClosingMode(signals: LeadSignals) {
-  return Boolean(signals.budget && signals.location && signals.buyingTimeline);
+  return Boolean(signals.name && (signals.email || signals.phone) && signals.budget && signals.location && signals.propertyType && signals.buyingTimeline);
 }

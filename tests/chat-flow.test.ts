@@ -24,7 +24,12 @@ describe("mandatory capture flow", () => {
   });
 
   it("passes when both name and one contact method are present", () => {
-    expect(isMandatoryInfoMissing({ name: "Nadia", phone: "+97150000000" })).toBe(false);
+    expect(isMandatoryInfoMissing({ name: "Nadia Salem", phone: "+97150000000" })).toBe(false);
+  });
+
+  it("requires full name, not first name only", () => {
+    expect(isMandatoryInfoMissing({ name: "Achraf", email: "achraf@test.com" })).toBe(true);
+    expect(isMandatoryInfoMissing({ name: "Achraf Lachgar", email: "achraf@test.com" })).toBe(false);
   });
 
   it("enforces gate after second user message", () => {
