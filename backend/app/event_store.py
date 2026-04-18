@@ -31,7 +31,7 @@ def event_already_processed(event_id: str) -> bool:
     return event.get("status") == EVENT_STATUS_SUCCESS
 
 
-def create_or_get_event(event_type: str, payload: dict[str, Any], max_attempts: int = 3) -> tuple[str, bool]:
+def create_or_get_event(event_type: str, payload: dict[str, Any], max_attempts: int = 6) -> tuple[str, bool]:
     agency_id = str(payload.get("agency_id", ""))
     lead_id = payload.get("lead_id")
 

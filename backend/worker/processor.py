@@ -20,11 +20,11 @@ from backend.app.event_store import (
 )
 from backend.app.events import emit_event
 from backend.app.logging_store import log_event
-from backend.app.outbox import get_pending_outbox, mark_outbox_dispatched, mark_outbox_failed
 from backend.app.providers import resolve_provider
 from backend.app.queue import enqueue_event, queue_name_for_agency, release_due_delayed_events
 from backend.app.rate_limiter import RateLimitExceededError, enforce_per_tenant_rate_limit
 from backend.app.supabase_client import get_supabase
+from backend.worker.retry_manager import dispatch_outbox_once as retry_dispatch_outbox_once
 
 
 HOT_EVENT = "lead.hot"
@@ -116,7 +116,7 @@ def execute_decision_action(agency_id: str, lead_id: str, event_id: str, decisio
         emit_event(
             FOLLOWUP_EVENT,
             {"lead_id": lead_id, "agency_id": agency_id},
-            max_attempts=3,
+            max_attempts=6,
             delay_seconds=3600,
         )
 
@@ -189,10 +189,12 @@ async def send_hot_lead_notification(agency_id: str, lead: dict, event_id: str) 
 
 def get_backoff_seconds(attempt: int) -> int:
     if attempt <= 1:
-        return 2
+        return 30
     if attempt == 2:
-        return 5
-    return 12
+        return 120
+    if attempt == 3:
+        return 600
+    return 3600
 
 
 def parse_message(message: dict) -> tuple[str, str, dict, str, str | None]:
@@ -287,7 +289,7 @@ def process_event(message: dict) -> None:
         mark_event_status(event_id, EVENT_STATUS_PROCESSING)
 
     attempt = int(event_row.get("attempts") or 1)
-    max_attempts = int(event_row.get("max_attempts") or 3)
+    max_attempts = int(event_row.get("max_attempts") or 6)
 
     try:
         if not lead_id:
@@ -329,28 +331,4 @@ def run_worker(is_demo: bool = False) -> None:
 
 
 def dispatch_outbox_once(limit: int = 100) -> None:
-    pending = get_pending_outbox(limit=limit)
-    for item in pending:
-        outbox_id = item["id"]
-        event_id = str(item.get("event_id") or "")
-        event_type = item["event_type"]
-        payload = item["payload"]
-        retries = int(item.get("retry_count") or 0)
-        agency_id = str(item.get("agency_id") or payload.get("agency_id") or "")
-        lead_id = item.get("lead_id") or payload.get("lead_id")
-
-        if not event_id:
-            mark_outbox_failed(outbox_id, retries + 1, "missing event_id")
-            log_event(agency_id, lead_id, event_type, "error", "Outbox missing event_id", retries + 1)
-            continue
-
-        try:
-            enqueue_event(event_id, event_type, payload)
-            mark_outbox_dispatched(outbox_id)
-            log_event(agency_id, lead_id, event_type, "queued", "Outbox dispatched", retries + 1, event_id=event_id)
-        except RateLimitExceededError as exc:
-            mark_outbox_failed(outbox_id, retries + 1, str(exc))
-            log_event(agency_id, lead_id, event_type, "retrying", str(exc), retries + 1, event_id=event_id)
-        except Exception as exc:  # noqa: BLE001
-            mark_outbox_failed(outbox_id, retries + 1, str(exc))
-            log_event(agency_id, lead_id, event_type, "error", str(exc), retries + 1, event_id=event_id)
+    retry_dispatch_outbox_once(limit=limit)

@@ -99,12 +99,12 @@ def create_lead(payload: LeadCreateRequest) -> dict:
 
     emitted_events: list[str] = []
     emitted_events.append(
-        emit_event(event_type, {"lead_id": lead_id, "agency_id": payload.agency_id}, max_attempts=3)
+        emit_event(event_type, {"lead_id": lead_id, "agency_id": payload.agency_id}, max_attempts=6)
     )
 
     if status == "hot":
         emitted_events.append(
-            emit_event("lead.hot", {"lead_id": lead_id, "agency_id": payload.agency_id}, max_attempts=3)
+            emit_event("lead.hot", {"lead_id": lead_id, "agency_id": payload.agency_id}, max_attempts=6)
         )
 
     return {"id": lead_id, "status": status, "queued": True, "event_ids": emitted_events}
