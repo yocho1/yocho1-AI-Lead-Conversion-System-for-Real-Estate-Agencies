@@ -66,7 +66,9 @@ function formatLastActivity(value: string) {
 
 function getDisplayLeadName(lead: Lead) {
   const rawName = (lead.name || "").trim();
-  if (!rawName) return "Unknown";
+  if (!rawName) {
+    return (lead.phone || lead.email || lead.location || "Unknown").trim();
+  }
 
   const rawLocation = (lead.location || "").trim();
   if (rawName.toLowerCase() === rawLocation?.toLowerCase()) {
@@ -109,6 +111,7 @@ export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agency
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [agentDraft, setAgentDraft] = useState("");
   const [sendingAgentMessage, setSendingAgentMessage] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [deletingLeadId, setDeletingLeadId] = useState<string | null>(null);
   const [searchValue, setSearchValue] = useState("");
@@ -198,6 +201,7 @@ export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agency
     };
 
     setSendingAgentMessage(true);
+    setSendError(null);
     try {
       const response = await fetch(`/api/leads/${selectedLeadId}/messages`, {
         method: "POST",
@@ -211,11 +215,15 @@ export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agency
       }
 
       setAgentDraft("");
+      if (data.message) {
+        setMessages((prev) => [...prev, data.message as ConversationMessage]);
+      }
       const refreshResponse = await fetch(`/api/leads/${selectedLeadId}/messages?agencyApiKey=${agencyApiKey}`);
       const refreshData = await refreshResponse.json();
       setMessages(refreshData.messages || []);
-    } catch {
-      globalThis.alert("Unable to send message.");
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unable to send message.";
+      setSendError(errorMessage);
     } finally {
       setSendingAgentMessage(false);
     }
@@ -474,13 +482,20 @@ export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agency
                 <div className="text-sm leading-[1.45]">{renderMessageContent(message.content)}</div>
               </div>
             ))}
+            {messages.length === 0 && (
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-soft)]">
+                No conversation history yet for this lead.
+              </div>
+            )}
 
-            <div className="inline-flex w-fit items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-xs text-[var(--text-soft)]">
-              <span>AI is typing</span>
-              <span className="typing-dot" />
-              <span className="typing-dot" />
-              <span className="typing-dot" />
-            </div>
+            {sendingAgentMessage && (
+              <div className="inline-flex w-fit items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-xs text-[var(--text-soft)]">
+                <span>Sending</span>
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+              </div>
+            )}
 
             <div className="mt-3 flex items-end gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2">
               <textarea
@@ -500,6 +515,9 @@ export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agency
                 {sendingAgentMessage ? "Sending..." : "Send"}
               </AppButton>
             </div>
+            {sendError && (
+              <p className="m-0 text-xs text-[var(--danger)]">{sendError}</p>
+            )}
           </div>
         )}
       </SurfaceCard>
