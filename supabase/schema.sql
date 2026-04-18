@@ -69,6 +69,74 @@ create table if not exists public.messages (
   timestamp timestamptz not null default now()
 );
 
+create table if not exists public.event_outbox (
+  id uuid primary key default gen_random_uuid(),
+  event_id text,
+  agency_id text,
+  lead_id uuid,
+  event_type text not null,
+  payload jsonb not null,
+  status text not null default 'pending' check (status in ('pending', 'success', 'failed')),
+  retry_count int not null default 0,
+  max_attempts int not null default 6,
+  next_retry_at timestamptz,
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz
+);
+
+create table if not exists public.event_outbox_failed (
+  id uuid primary key default gen_random_uuid(),
+  outbox_id uuid,
+  event_id text,
+  event_type text not null,
+  payload jsonb not null,
+  agency_id text,
+  lead_id uuid,
+  retry_count int not null,
+  error_message text,
+  failed_at timestamptz not null default now()
+);
+
+create table if not exists public.event_logs (
+  id uuid primary key default gen_random_uuid(),
+  agency_id text not null,
+  lead_id uuid,
+  event_type text not null,
+  status text not null,
+  message text,
+  attempt int not null default 0,
+  event_id text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.events (
+  id uuid primary key default gen_random_uuid(),
+  event_id text not null,
+  agency_id text not null,
+  lead_id uuid,
+  event_type text not null,
+  status text not null check (status in ('queued', 'processing', 'success', 'failed', 'retrying', 'dead_letter')),
+  attempts int not null default 0,
+  max_attempts int not null default 6,
+  payload jsonb not null,
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.dead_letter_queue (
+  id uuid primary key default gen_random_uuid(),
+  event_id text not null,
+  agency_id text not null,
+  lead_id uuid,
+  event_type text not null,
+  payload jsonb not null,
+  attempts int not null,
+  error_message text,
+  moved_at timestamptz not null default now()
+);
+
 alter table public.leads add column if not exists preferred_visit_day text;
 alter table public.leads add column if not exists preferred_visit_period text;
 alter table public.leads add column if not exists appointment_status text not null default 'not_set';
@@ -110,12 +178,26 @@ alter table public.leads drop constraint if exists leads_lead_category_check;
 alter table public.leads add constraint leads_lead_category_check check (lead_category in ('HOT', 'WARM', 'COLD') or lead_category is null);
 alter table public.leads drop constraint if exists leads_next_action_check;
 alter table public.leads add constraint leads_next_action_check check (next_action in ('send_whatsapp', 'schedule_followup', 'none') or next_action is null);
+alter table public.event_outbox add column if not exists event_id text;
+alter table public.event_outbox add column if not exists agency_id text;
+alter table public.event_outbox add column if not exists lead_id uuid;
+alter table public.event_outbox add column if not exists max_attempts int not null default 6;
+alter table public.event_outbox add column if not exists next_retry_at timestamptz;
+alter table public.event_outbox alter column next_retry_at set default now();
+alter table public.event_outbox drop constraint if exists event_outbox_status_check;
+alter table public.event_outbox add constraint event_outbox_status_check check (status in ('pending', 'success', 'failed'));
 
 create index if not exists idx_leads_agency_id on public.leads(agency_id);
 create index if not exists idx_leads_last_message_at on public.leads(last_message_at desc);
 create index if not exists idx_leads_lead_score on public.leads(lead_score desc);
 create index if not exists idx_leads_lead_category on public.leads(lead_category);
 create index if not exists idx_messages_lead_id_timestamp on public.messages(lead_id, timestamp desc);
+create index if not exists idx_event_outbox_pending_retry on public.event_outbox(status, next_retry_at);
+create index if not exists idx_event_logs_agency_created_at on public.event_logs(agency_id, created_at desc);
+create unique index if not exists idx_events_event_id on public.events(event_id);
+create unique index if not exists idx_outbox_event_id on public.event_outbox(event_id) where event_id is not null;
+create unique index if not exists idx_dead_letter_event_id on public.dead_letter_queue(event_id);
+create unique index if not exists idx_event_outbox_failed_event_id on public.event_outbox_failed(event_id) where event_id is not null;
 create unique index if not exists idx_unique_lead_email_per_agency on public.leads(agency_id, email) where email is not null;
 create unique index if not exists idx_unique_lead_phone_per_agency on public.leads(agency_id, phone) where phone is not null;
 

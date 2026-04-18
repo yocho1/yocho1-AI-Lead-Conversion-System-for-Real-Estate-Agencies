@@ -1,4 +1,4 @@
-from worker.processor import dispatch_outbox_once
+from worker.retry_manager import dispatch_outbox_once
 
 
 if __name__ == "__main__":
