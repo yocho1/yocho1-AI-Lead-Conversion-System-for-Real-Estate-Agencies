@@ -54,6 +54,9 @@ create table if not exists public.leads (
     'created_at', now()
   ),
   chat_locked boolean not null default false,
+  lead_score int,
+  lead_category text check (lead_category in ('HOT', 'WARM', 'COLD')),
+  next_action text check (next_action in ('send_whatsapp', 'schedule_followup', 'none')),
   last_message_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
@@ -97,12 +100,21 @@ alter table public.leads add column if not exists lead_state jsonb not null defa
   'created_at', now()
 );
 alter table public.leads add column if not exists chat_locked boolean not null default false;
+alter table public.leads add column if not exists lead_score int;
+alter table public.leads add column if not exists lead_category text;
+alter table public.leads add column if not exists next_action text;
 alter table public.leads add column if not exists last_message_at timestamptz not null default now();
 alter table public.leads drop constraint if exists leads_appointment_status_check;
 alter table public.leads add constraint leads_appointment_status_check check (appointment_status in ('not_set', 'pending', 'reserved'));
+alter table public.leads drop constraint if exists leads_lead_category_check;
+alter table public.leads add constraint leads_lead_category_check check (lead_category in ('HOT', 'WARM', 'COLD') or lead_category is null);
+alter table public.leads drop constraint if exists leads_next_action_check;
+alter table public.leads add constraint leads_next_action_check check (next_action in ('send_whatsapp', 'schedule_followup', 'none') or next_action is null);
 
 create index if not exists idx_leads_agency_id on public.leads(agency_id);
 create index if not exists idx_leads_last_message_at on public.leads(last_message_at desc);
+create index if not exists idx_leads_lead_score on public.leads(lead_score desc);
+create index if not exists idx_leads_lead_category on public.leads(lead_category);
 create index if not exists idx_messages_lead_id_timestamp on public.messages(lead_id, timestamp desc);
 create unique index if not exists idx_unique_lead_email_per_agency on public.leads(agency_id, email) where email is not null;
 create unique index if not exists idx_unique_lead_phone_per_agency on public.leads(agency_id, phone) where phone is not null;

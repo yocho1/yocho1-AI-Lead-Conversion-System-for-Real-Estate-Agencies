@@ -1,9 +1,11 @@
 import asyncio
 import json
+from datetime import datetime
 
 import redis
 
 from backend.app.config import get_settings
+from backend.app.decision_engine import decide_next_action
 from backend.app.event_store import (
     EVENT_STATUS_DEAD_LETTER,
     EVENT_STATUS_FAILED,
@@ -16,6 +18,7 @@ from backend.app.event_store import (
     mark_event_status,
     move_to_dead_letter,
 )
+from backend.app.events import emit_event
 from backend.app.logging_store import log_event
 from backend.app.outbox import get_pending_outbox, mark_outbox_dispatched, mark_outbox_failed
 from backend.app.providers import resolve_provider
@@ -25,7 +28,8 @@ from backend.app.supabase_client import get_supabase
 
 
 HOT_EVENT = "lead.hot"
-RECOGNIZED_EVENTS = {"lead.created", "lead.updated", HOT_EVENT, "lead.booked"}
+FOLLOWUP_EVENT = "lead.followup"
+RECOGNIZED_EVENTS = {"lead.created", "lead.updated", HOT_EVENT, "lead.booked", FOLLOWUP_EVENT}
 
 settings = get_settings()
 redis_client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
@@ -39,13 +43,106 @@ def queue_for_mode(is_demo: bool) -> str:
 def fetch_lead(agency_id: str, lead_id: str) -> dict | None:
     result = (
         supabase.table("leads")
-        .select("id,agency_id,name,email,phone,budget,location,timeline,timeline_normalized,status,whatsapp_sent")
+        .select("id,agency_id,name,email,phone,budget,budget_value,location,timeline,timeline_normalized,status,whatsapp_sent")
         .eq("id", lead_id)
         .eq("agency_id", agency_id)
         .maybe_single()
         .execute()
     )
     return result.data
+
+
+def _parse_iso_datetime(value: str) -> datetime | None:
+    try:
+        normalized = value.replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def fetch_engagement_metrics(lead_id: str) -> dict:
+    messages_result = (
+        supabase.table("messages")
+        .select("role,timestamp")
+        .eq("lead_id", lead_id)
+        .order("timestamp", desc=False)
+        .limit(300)
+        .execute()
+    )
+    messages = messages_result.data or []
+
+    response_times: list[float] = []
+    last_user_ts: datetime | None = None
+
+    for msg in messages:
+        role = str(msg.get("role") or "")
+        ts_raw = str(msg.get("timestamp") or "")
+        ts = _parse_iso_datetime(ts_raw)
+        if ts is None:
+            continue
+
+        if role == "user":
+            last_user_ts = ts
+        elif role == "assistant" and last_user_ts is not None:
+            delta_seconds = (ts - last_user_ts).total_seconds()
+            if delta_seconds >= 0:
+                response_times.append(delta_seconds)
+            last_user_ts = None
+
+    average_response = sum(response_times) / len(response_times) if response_times else 1800.0
+    return {
+        "messages_count": len(messages),
+        "avg_response_time_seconds": average_response,
+    }
+
+
+def persist_decision(agency_id: str, lead_id: str, decision: dict) -> None:
+    update_payload = {
+        "lead_score": int(decision["score"]),
+        "lead_category": decision["category"],
+        "next_action": decision["action"],
+        "status": decision["category"].lower(),
+    }
+    supabase.table("leads").update(update_payload).eq("id", lead_id).eq("agency_id", agency_id).execute()
+
+
+def execute_decision_action(agency_id: str, lead_id: str, event_id: str, decision: dict, lead: dict) -> None:
+    action = decision["action"]
+    if action == "send_whatsapp":
+        asyncio.run(send_hot_lead_notification(agency_id, lead, event_id))
+        return
+
+    if action == "schedule_followup":
+        emit_event(
+            FOLLOWUP_EVENT,
+            {"lead_id": lead_id, "agency_id": agency_id},
+            max_attempts=3,
+            delay_seconds=3600,
+        )
+
+
+def evaluate_and_decide(agency_id: str, lead_id: str, event_id: str, event_type: str) -> None:
+    lead = fetch_lead(agency_id, lead_id)
+    if not lead:
+        raise RuntimeError("lead not found for agency scope")
+
+    engagement = fetch_engagement_metrics(lead_id)
+    decision_input = {
+        **lead,
+        **engagement,
+    }
+    decision = decide_next_action(decision_input)
+    persist_decision(agency_id, lead_id, decision)
+    execute_decision_action(agency_id, lead_id, event_id, decision, lead)
+
+    log_event(
+        agency_id,
+        lead_id,
+        event_type,
+        "decision_made",
+        f"score={decision['score']} category={decision['category']} action={decision['action']}",
+        event_id=event_id,
+    )
 
 
 def build_hot_lead_message(lead: dict) -> str:
@@ -201,6 +298,13 @@ def process_event(message: dict) -> None:
             if should_mark_success:
                 mark_success_and_log(agency_id, lead_id, event_type, event_id, attempt)
             return
+
+        if event_type == FOLLOWUP_EVENT:
+            log_event(agency_id, lead_id, event_type, "followup_due", "Scheduled follow-up is due", event_id=event_id)
+            mark_success_and_log(agency_id, lead_id, event_type, event_id, attempt)
+            return
+
+        evaluate_and_decide(agency_id, lead_id, event_id, event_type)
 
         mark_success_and_log(agency_id, lead_id, event_type, event_id, attempt)
     except Exception as exc:  # noqa: BLE001
