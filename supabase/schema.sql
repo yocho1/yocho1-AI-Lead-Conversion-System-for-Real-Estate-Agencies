@@ -64,6 +64,7 @@ create table if not exists public.leads (
 create table if not exists public.messages (
   id uuid primary key default gen_random_uuid(),
   lead_id uuid not null references public.leads(id) on delete cascade,
+  sender text not null default 'user' check (sender in ('user', 'ai', 'agent')),
   role text not null check (role in ('user', 'assistant')),
   content text not null,
   timestamp timestamptz not null default now()
@@ -192,6 +193,7 @@ create index if not exists idx_leads_last_message_at on public.leads(last_messag
 create index if not exists idx_leads_lead_score on public.leads(lead_score desc);
 create index if not exists idx_leads_lead_category on public.leads(lead_category);
 create index if not exists idx_messages_lead_id_timestamp on public.messages(lead_id, timestamp desc);
+create index if not exists idx_messages_sender on public.messages(sender);
 create index if not exists idx_event_outbox_pending_retry on public.event_outbox(status, next_retry_at);
 create index if not exists idx_event_logs_agency_created_at on public.event_logs(agency_id, created_at desc);
 create unique index if not exists idx_events_event_id on public.events(event_id);
