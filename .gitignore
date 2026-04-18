@@ -23,3 +23,7 @@ coverage/
 
 # supabase cli temp
 supabase/.temp/
+
+# python cache
+__pycache__/
+*.py[cod]
