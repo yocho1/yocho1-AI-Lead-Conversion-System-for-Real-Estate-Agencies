@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildDynamicCalendarLink, resolveVisitSlot } from "@/lib/appointment";
+import { resolveAgencyByApiKey } from "@/lib/agency-context";
 import {
   applyUserInputToState,
   getInvalidFieldMessage,
@@ -197,6 +198,7 @@ function isMissingSenderColumnError(errorMessage: string | undefined) {
 
 async function insertMessageCompat(
   supabase: ReturnType<typeof getServerSupabase>,
+  agencyId: string,
   leadId: string,
   role: "user" | "assistant",
   content: string,
@@ -205,6 +207,7 @@ async function insertMessageCompat(
   const timestamp = new Date().toISOString();
 
   let insertResult = await supabase.from("messages").insert({
+    agency_id: agencyId,
     lead_id: leadId,
     sender,
     role,
@@ -218,6 +221,7 @@ async function insertMessageCompat(
 
   if (isMissingSenderColumnError(insertResult.error.message)) {
     insertResult = await supabase.from("messages").insert({
+      agency_id: agencyId,
       lead_id: leadId,
       role,
       content,
@@ -230,6 +234,7 @@ async function insertMessageCompat(
   }
 
   insertResult = await supabase.from("messages").insert({
+    agency_id: agencyId,
     lead_id: leadId,
     sender,
     content,
@@ -241,6 +246,7 @@ async function insertMessageCompat(
   }
 
   return await supabase.from("messages").insert({
+    agency_id: agencyId,
     lead_id: leadId,
     content,
     timestamp,
@@ -259,7 +265,7 @@ export async function POST(request: Request) {
     const { agencyApiKey, leadId, message, demoMode = false } = parsed.data;
     const supabase = getServerSupabase();
 
-    const { data: agency } = await supabase.from("agencies").select("id").eq("api_key", agencyApiKey).single();
+    const agency = await resolveAgencyByApiKey(supabase, agencyApiKey);
     if (!agency) {
       return NextResponse.json({ error: "Invalid agency API key" }, { status: 401 });
     }
@@ -306,7 +312,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unable to resolve lead id" }, { status: 500 });
     }
 
-    await insertMessageCompat(supabase, currentLeadId, "user", message);
+    await insertMessageCompat(supabase, agency.id, currentLeadId, "user", message);
 
     const { data: lead, error: leadLoadError } = await supabase
       .from("leads")
@@ -314,6 +320,7 @@ export async function POST(request: Request) {
         "id,name,email,phone,budget,budget_value,currency,location,location_city,location_country,property_type,buying_timeline,timeline_normalized,preferred_visit_day,preferred_visit_period,appointment_status,hot_alert_sent,chat_locked,lead_state",
       )
       .eq("id", currentLeadId)
+      .eq("agency_id", agency.id)
       .single();
 
     if (leadLoadError || !lead) {
@@ -324,9 +331,13 @@ export async function POST(request: Request) {
       const finalLockedMessage =
         "✅ Your visit is already confirmed. Our agent will contact you shortly.";
 
-      await insertMessageCompat(supabase, currentLeadId, "assistant", finalLockedMessage);
+      await insertMessageCompat(supabase, agency.id, currentLeadId, "assistant", finalLockedMessage);
 
-      await supabase.from("leads").update({ last_message_at: new Date().toISOString() }).eq("id", currentLeadId);
+      await supabase
+        .from("leads")
+        .update({ last_message_at: new Date().toISOString() })
+        .eq("id", currentLeadId)
+        .eq("agency_id", agency.id);
 
       return NextResponse.json({
         leadId: currentLeadId,
@@ -426,13 +437,14 @@ export async function POST(request: Request) {
         chat_locked: chatLocked,
         last_message_at: new Date().toISOString(),
       })
-      .eq("id", currentLeadId);
+      .eq("id", currentLeadId)
+      .eq("agency_id", agency.id);
 
     if (leadUpdateError) {
       return NextResponse.json({ error: "Unable to update lead profile" }, { status: 500 });
     }
 
-    await insertMessageCompat(supabase, currentLeadId, "assistant", assistantMessage);
+    await insertMessageCompat(supabase, agency.id, currentLeadId, "assistant", assistantMessage);
 
     if (
       crmStatus === "hot" &&
@@ -449,7 +461,7 @@ export async function POST(request: Request) {
       });
 
       if (alert.sent) {
-        await supabase.from("leads").update({ hot_alert_sent: true }).eq("id", currentLeadId);
+        await supabase.from("leads").update({ hot_alert_sent: true }).eq("id", currentLeadId).eq("agency_id", agency.id);
       }
     }
 

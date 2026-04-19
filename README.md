@@ -75,6 +75,7 @@ Copy `.env.example` to `.env.local` and fill values:
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+ADMIN_API_KEY=
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openai/gpt-4o-mini
 RESEND_API_KEY=
@@ -123,8 +124,18 @@ Open:
   - Returns conversation history
 
 - `POST /api/follow-up/run`
+  - Requires `agencyApiKey` via query string or `x-agency-key` header
   - Sends follow-up to leads inactive for `FOLLOW_UP_DELAY_MINUTES`
   - Intended for cron job usage
+
+- `POST /api/agencies`
+  - Admin only (`x-admin-key` when `ADMIN_API_KEY` is set)
+  - Body: `{ name, primaryColor?, logoUrl? }`
+  - Creates tenant agency and returns API key
+
+- `POST /api/agencies/:agencyId/api-keys`
+  - Admin only (`x-admin-key`)
+  - Rotates tenant API key
 
 - `GET /api/analytics/leads-per-day?agencyApiKey=...`
   - Returns simple daily lead counts
@@ -135,8 +146,18 @@ Open:
 ## Multi-Tenant Model
 
 - Each agency has its own `api_key`.
-- Every API call is scoped by `agencyApiKey`.
-- Leads and messages are fetched only for the matched agency.
+- API middleware resolves `agency_key -> agency_id` and forwards tenant context headers.
+- Every API call is scoped by `agency_id`.
+- Leads, messages, and events are isolated by tenant.
+- Supabase RLS policies enforce tenant isolation for authenticated users.
+
+## Isolation Test Scenario
+
+1. Create two agencies via `POST /api/agencies`.
+2. Insert leads for each agency using each generated API key.
+3. Query `GET /api/leads?agencyApiKey=<agency_A_key>` and verify only agency A leads return.
+4. Query `GET /api/leads?agencyApiKey=<agency_B_key>` and verify only agency B leads return.
+5. Repeat for `GET /api/leads/:leadId/messages` and verify no cross-tenant message access.
 
 ## Deployment (Vercel)
 
