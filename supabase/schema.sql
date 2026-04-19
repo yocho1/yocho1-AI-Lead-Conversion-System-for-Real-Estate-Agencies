@@ -71,6 +71,21 @@ create table if not exists public.messages (
   timestamp timestamptz not null default now()
 );
 
+create table if not exists public.daily_stats (
+  agency_id uuid not null references public.agencies(id) on delete cascade,
+  stat_date date not null,
+  visitors int not null default 0,
+  leads int not null default 0,
+  qualified int not null default 0,
+  booked int not null default 0,
+  conversion_rate numeric(6,2) not null default 0,
+  avg_response_time_seconds numeric(10,2) not null default 0,
+  leads_per_day numeric(10,2) not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (agency_id, stat_date)
+);
+
 create table if not exists public.event_outbox (
   id uuid primary key default gen_random_uuid(),
   event_id text,
@@ -196,6 +211,7 @@ create index if not exists idx_leads_lead_category on public.leads(lead_category
 create index if not exists idx_messages_lead_id_timestamp on public.messages(lead_id, timestamp desc);
 create index if not exists idx_messages_agency_lead_timestamp on public.messages(agency_id, lead_id, timestamp desc);
 create index if not exists idx_messages_sender on public.messages(sender);
+create index if not exists idx_daily_stats_agency_date on public.daily_stats(agency_id, stat_date desc);
 create index if not exists idx_event_outbox_pending_retry on public.event_outbox(status, next_retry_at);
 create index if not exists idx_event_logs_agency_created_at on public.event_logs(agency_id, created_at desc);
 create index if not exists idx_events_agency_created_at on public.events(agency_id, created_at desc);
