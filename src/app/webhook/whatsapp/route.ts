@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveAgencyByApiKey } from "@/lib/agency-context";
 import { getServerEnv } from "@/lib/env";
 import { getServerSupabase } from "@/lib/supabase";
 
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
   const agencyApiKey = (getFormDataText(formData, "agencyApiKey") || request.headers.get("x-agency-key") || "demo-agency-key").trim();
   const supabase = getServerSupabase();
 
-  const { data: agency } = await supabase.from("agencies").select("id, api_key").eq("api_key", agencyApiKey).single();
+  const agency = await resolveAgencyByApiKey(supabase, agencyApiKey);
   if (!agency) {
     return NextResponse.json({ error: "Invalid agency API key" }, { status: 401 });
   }

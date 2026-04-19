@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { requireAgencyContext, resolveAgencyByApiKey } from "@/lib/agency-context";
 import { getServerSupabase } from "@/lib/supabase";
 
 type DbMessage = {
@@ -55,7 +56,7 @@ function buildDemoConversation(seed: string): DbMessage[] {
 }
 
 const postMessageSchema = z.object({
-  agencyApiKey: z.string().min(4),
+  agencyApiKey: z.string().min(4).optional(),
   sender: z.enum(["agent", "user"]).default("agent"),
   content: z.string().min(1),
   triggerAiReply: z.boolean().optional().default(false),
@@ -111,10 +112,15 @@ function decodeSenderAndContent(row: MessageReadRow): { sender: "user" | "ai" | 
   return { sender: mapRoleToSender(row.role), content: rawContent };
 }
 
-async function readMessagesCompat(supabase: ReturnType<typeof getServerSupabase>, leadId: string): Promise<DbMessage[]> {
+async function readMessagesCompat(
+  supabase: ReturnType<typeof getServerSupabase>,
+  leadId: string,
+  agencyId: string,
+): Promise<DbMessage[]> {
   const senderQuery = await supabase
     .from("messages")
     .select("id,sender,content,timestamp")
+    .eq("agency_id", agencyId)
     .eq("lead_id", leadId)
     .order("timestamp", { ascending: true });
 
@@ -130,6 +136,7 @@ async function readMessagesCompat(supabase: ReturnType<typeof getServerSupabase>
   const roleQuery = await supabase
     .from("messages")
     .select("id,role,content,timestamp")
+    .eq("agency_id", agencyId)
     .eq("lead_id", leadId)
     .order("timestamp", { ascending: true });
 
@@ -145,6 +152,7 @@ async function readMessagesCompat(supabase: ReturnType<typeof getServerSupabase>
   const minimalQuery = await supabase
     .from("messages")
     .select("id,content,timestamp")
+    .eq("agency_id", agencyId)
     .eq("lead_id", leadId)
     .order("timestamp", { ascending: true });
 
@@ -162,6 +170,7 @@ async function readMessagesCompat(supabase: ReturnType<typeof getServerSupabase>
 
 async function insertMessageCompat(
   supabase: ReturnType<typeof getServerSupabase>,
+  agencyId: string,
   leadId: string,
   sender: "user" | "ai" | "agent",
   role: "user" | "assistant",
@@ -172,7 +181,7 @@ async function insertMessageCompat(
 
   const bothInsert = await supabase
     .from("messages")
-    .insert({ lead_id: leadId, sender, role, content, timestamp })
+    .insert({ agency_id: agencyId, lead_id: leadId, sender, role, content, timestamp })
     .select("id,sender,role,content,timestamp")
     .single();
 
@@ -190,7 +199,7 @@ async function insertMessageCompat(
 
   const roleInsert = await supabase
     .from("messages")
-    .insert({ lead_id: leadId, role, content: fallbackContent, timestamp })
+    .insert({ agency_id: agencyId, lead_id: leadId, role, content: fallbackContent, timestamp })
     .select("id,role,content,timestamp")
     .single();
 
@@ -208,7 +217,7 @@ async function insertMessageCompat(
 
   const senderInsert = await supabase
     .from("messages")
-    .insert({ lead_id: leadId, sender, content, timestamp })
+    .insert({ agency_id: agencyId, lead_id: leadId, sender, content, timestamp })
     .select("id,sender,content,timestamp")
     .single();
 
@@ -226,7 +235,7 @@ async function insertMessageCompat(
 
   const minimalInsert = await supabase
     .from("messages")
-    .insert({ lead_id: leadId, content: fallbackContent, timestamp })
+    .insert({ agency_id: agencyId, lead_id: leadId, content: fallbackContent, timestamp })
     .select("id,content,timestamp")
     .single();
 
@@ -253,15 +262,14 @@ export async function GET(
   { params }: { params: Promise<{ leadId: string }> },
 ) {
   const { searchParams } = new URL(request.url);
-  const agencyApiKey = searchParams.get("agencyApiKey");
   const latestOnly = searchParams.get("latestSessionOnly") === "true";
-
-  if (!agencyApiKey) {
-    return NextResponse.json({ error: "Missing agencyApiKey" }, { status: 400 });
-  }
 
   const { leadId } = await params;
   const supabase = getServerSupabase();
+  const agencyContext = await requireAgencyContext(request, supabase);
+  if (agencyContext instanceof NextResponse) {
+    return agencyContext;
+  }
 
   if (leadId === "demo-hot-lead") {
     return NextResponse.json({
@@ -300,19 +308,19 @@ export async function GET(
     });
   }
 
-  const { data: agency } = await supabase.from("agencies").select("id").eq("api_key", agencyApiKey).single();
-  if (!agency) {
-    return NextResponse.json({ error: "Invalid agency key" }, { status: 401 });
-  }
-
-  const { data: lead } = await supabase.from("leads").select("id").eq("id", leadId).eq("agency_id", agency.id).single();
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("id")
+    .eq("id", leadId)
+    .eq("agency_id", agencyContext.agencyId)
+    .single();
   if (!lead) {
     return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   }
 
-  const normalizedMessages = await readMessagesCompat(supabase, leadId);
+  const normalizedMessages = await readMessagesCompat(supabase, leadId, agencyContext.agencyId);
 
-  if (normalizedMessages.length === 0 && agencyApiKey === "demo-agency-key") {
+  if (normalizedMessages.length === 0 && agencyContext.agencyApiKey === "demo-agency-key") {
     return NextResponse.json({ messages: buildDemoConversation(leadId) });
   }
 
@@ -361,12 +369,26 @@ export async function POST(
     });
   }
 
-  const { data: agency } = await supabase.from("agencies").select("id").eq("api_key", agencyApiKey).single();
-  if (!agency) {
-    return NextResponse.json({ error: "Invalid agency key" }, { status: 401 });
+  let agencyId = "";
+  let normalizedAgencyApiKey = "";
+
+  if (agencyApiKey) {
+    const agencyByBodyKey = await resolveAgencyByApiKey(supabase, agencyApiKey);
+    if (!agencyByBodyKey) {
+      return NextResponse.json({ error: "Invalid agency key" }, { status: 401 });
+    }
+    agencyId = agencyByBodyKey.id;
+    normalizedAgencyApiKey = agencyByBodyKey.api_key;
+  } else {
+    const agencyContext = await requireAgencyContext(request, supabase);
+    if (agencyContext instanceof NextResponse) {
+      return agencyContext;
+    }
+    agencyId = agencyContext.agencyId;
+    normalizedAgencyApiKey = agencyContext.agencyApiKey;
   }
 
-  const { data: lead } = await supabase.from("leads").select("id").eq("id", leadId).eq("agency_id", agency.id).single();
+  const { data: lead } = await supabase.from("leads").select("id").eq("id", leadId).eq("agency_id", agencyId).single();
   if (!lead) {
     return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   }
@@ -376,7 +398,7 @@ export async function POST(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        agencyApiKey,
+        agencyApiKey: normalizedAgencyApiKey,
         leadId,
         message: content,
       }),
@@ -391,7 +413,7 @@ export async function POST(
   }
 
   const role = "user";
-  const insertResult = await insertMessageCompat(supabase, leadId, sender, role, content);
+  const insertResult = await insertMessageCompat(supabase, agencyId, leadId, sender, role, content);
   const insertedMessage = insertResult.message;
   const messageInsertError = insertResult.error;
 
@@ -403,7 +425,7 @@ export async function POST(
     .from("leads")
     .update({ last_message_at: new Date().toISOString() })
     .eq("id", leadId)
-    .eq("agency_id", agency.id);
+    .eq("agency_id", agencyId);
 
   return NextResponse.json({ ok: true, leadId, message: insertedMessage });
 }

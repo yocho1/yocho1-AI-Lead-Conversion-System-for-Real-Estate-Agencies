@@ -34,8 +34,10 @@ export interface Lead {
 
 export interface Message {
   id: string;
+  agency_id: string;
   lead_id: string;
   role: ChatRole;
+  sender?: "user" | "ai" | "agent";
   content: string;
   timestamp: string;
 }

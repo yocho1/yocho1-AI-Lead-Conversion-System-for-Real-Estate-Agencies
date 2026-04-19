@@ -1,26 +1,21 @@
 import { NextResponse } from "next/server";
+import { requireAgencyContext } from "@/lib/agency-context";
 import { getServerSupabase } from "@/lib/supabase";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const agencyApiKey = searchParams.get("agencyApiKey");
   const demoMode = searchParams.get("demo") === "true";
 
-  if (!agencyApiKey) {
-    return NextResponse.json({ error: "Missing agencyApiKey" }, { status: 400 });
-  }
-
   const supabase = getServerSupabase();
-  const { data: agency } = await supabase.from("agencies").select("id").eq("api_key", agencyApiKey).single();
-
-  if (!agency) {
-    return NextResponse.json({ error: "Invalid agency key" }, { status: 401 });
+  const agencyContext = await requireAgencyContext(request, supabase);
+  if (agencyContext instanceof NextResponse) {
+    return agencyContext;
   }
 
   const { data: leads, error } = await supabase
     .from("leads")
     .select("id, name, email, phone, budget, budget_value, currency, location, location_city, location_country, property_type, buying_timeline, timeline_normalized, appointment_status, status, hot_alert_sent, chat_locked, last_message_at, created_at")
-    .eq("agency_id", agency.id)
+    .eq("agency_id", agencyContext.agencyId)
     .order("last_message_at", { ascending: false });
 
   if (error) {
