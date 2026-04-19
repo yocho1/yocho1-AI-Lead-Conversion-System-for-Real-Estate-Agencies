@@ -25,7 +25,7 @@ type Lead = {
 
 type ConversationMessage = {
   id: string;
-  role: "user" | "assistant";
+  sender: "user" | "ai" | "agent";
   content: string;
   timestamp: string;
 };
@@ -66,20 +66,52 @@ function formatLastActivity(value: string) {
 
 function getDisplayLeadName(lead: Lead) {
   const rawName = (lead.name || "").trim();
-  if (!rawName) return "Unknown";
+  if (!rawName) {
+    return (lead.phone || lead.email || lead.location || "Unknown").trim();
+  }
 
   const rawLocation = (lead.location || "").trim();
-  if (rawLocation && rawName.toLowerCase() === rawLocation.toLowerCase()) {
+  if (rawName.toLowerCase() === rawLocation?.toLowerCase()) {
     return "Unknown";
   }
 
   return rawName;
 }
 
+function messageBubbleBackground(sender: ConversationMessage["sender"]) {
+  if (sender === "user") return "linear-gradient(120deg, #2563eb, #1d4ed8)";
+  if (sender === "agent") return "linear-gradient(120deg, #0f766e, #0d9488)";
+  return "color-mix(in srgb, var(--surface-3) 82%, var(--surface))";
+}
+
+function messageMetaColor(sender: ConversationMessage["sender"]) {
+  if (sender === "user") return "#bfdbfe";
+  if (sender === "agent") return "#99f6e4";
+  return "var(--text-soft)";
+}
+
+function messageJustifySelf(sender: ConversationMessage["sender"]) {
+  if (sender === "user" || sender === "agent") return "end";
+  return "start";
+}
+
+function messageTextColor(sender: ConversationMessage["sender"]) {
+  if (sender === "user") return "#eff6ff";
+  return "var(--text)";
+}
+
+function messageMarginRight(sender: ConversationMessage["sender"]) {
+  if (sender === "user" || sender === "agent") return "0.2rem";
+  return 0;
+}
+
 export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agencyApiKey: string; demoMode?: boolean }>) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [agentDraft, setAgentDraft] = useState("");
+  const [sendingAgentMessage, setSendingAgentMessage] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [deletingLeadId, setDeletingLeadId] = useState<string | null>(null);
   const [searchValue, setSearchValue] = useState("");
@@ -149,7 +181,53 @@ export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agency
     };
 
     void fetchMessages();
+
+    const intervalId = setInterval(() => {
+      void fetchMessages();
+    }, 3000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
   }, [selectedLeadId, agencyApiKey]);
+
+  const sendAgentMessage = async () => {
+    if (!selectedLeadId || !agentDraft.trim() || sendingAgentMessage) return;
+
+    const payload = {
+      agencyApiKey,
+      sender: "agent",
+      content: agentDraft.trim(),
+    };
+
+    setSendingAgentMessage(true);
+    setSendError(null);
+    try {
+      const response = await fetch(`/api/leads/${selectedLeadId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to send message");
+      }
+
+      setAgentDraft("");
+      if (data.message) {
+        setMessages((prev) => [...prev, data.message as ConversationMessage]);
+      }
+      const refreshResponse = await fetch(`/api/leads/${selectedLeadId}/messages?agencyApiKey=${agencyApiKey}`);
+      const refreshData = await refreshResponse.json();
+      setMessages(refreshData.messages || []);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unable to send message.";
+      setSendError(errorMessage);
+    } finally {
+      setSendingAgentMessage(false);
+    }
+  };
 
   const filteredLeads = leads.filter((lead) => {
     const statusMatch = statusFilter === "all" || getDisplayStatus(lead) === statusFilter;
@@ -388,32 +466,58 @@ export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agency
                 key={message.id}
                 className="max-w-[88%] rounded-xl border border-[var(--border)] px-3 py-2 shadow-[0_8px_18px_rgba(2,8,23,0.12)]"
                 style={{
-                  color: message.role === "user" ? "#eff6ff" : "var(--text)",
-                  justifySelf: message.role === "user" ? "end" : "start",
-                  marginRight: message.role === "user" ? "0.2rem" : 0,
-                  background:
-                    message.role === "user"
-                      ? "linear-gradient(120deg, #2563eb, #1d4ed8)"
-                      : "color-mix(in srgb, var(--surface-3) 82%, var(--surface))",
+                  color: messageTextColor(message.sender),
+                  justifySelf: messageJustifySelf(message.sender),
+                  marginRight: messageMarginRight(message.sender),
+                  background: messageBubbleBackground(message.sender),
                 }}
               >
                 <div
                   className="mb-1 flex items-center justify-between gap-2 text-[11px]"
-                  style={{ color: message.role === "user" ? "#bfdbfe" : "var(--text-soft)" }}
+                  style={{ color: messageMetaColor(message.sender) }}
                 >
-                  <span className="uppercase tracking-[0.05em]">{message.role}</span>
+                  <span className="uppercase tracking-[0.05em]">{message.sender}</span>
                   <span className="inline-flex items-center gap-1"><Clock3 size={11} />{new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                 </div>
                 <div className="text-sm leading-[1.45]">{renderMessageContent(message.content)}</div>
               </div>
             ))}
+            {messages.length === 0 && (
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-soft)]">
+                No conversation history yet for this lead.
+              </div>
+            )}
 
-            <div className="inline-flex w-fit items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-xs text-[var(--text-soft)]">
-              <span>AI is typing</span>
-              <span className="typing-dot" />
-              <span className="typing-dot" />
-              <span className="typing-dot" />
+            {sendingAgentMessage && (
+              <div className="inline-flex w-fit items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-xs text-[var(--text-soft)]">
+                <span>Sending</span>
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+              </div>
+            )}
+
+            <div className="mt-3 flex items-end gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-2">
+              <textarea
+                value={agentDraft}
+                onChange={(event) => setAgentDraft(event.target.value)}
+                placeholder="Write a message as agent..."
+                className="input min-h-[44px] flex-1 resize-y"
+                style={{ margin: 0 }}
+              />
+              <AppButton
+                variant="primary"
+                onClick={() => {
+                  void sendAgentMessage();
+                }}
+                disabled={sendingAgentMessage || !agentDraft.trim()}
+              >
+                {sendingAgentMessage ? "Sending..." : "Send"}
+              </AppButton>
             </div>
+            {sendError && (
+              <p className="m-0 text-xs text-[var(--danger)]">{sendError}</p>
+            )}
           </div>
         )}
       </SurfaceCard>

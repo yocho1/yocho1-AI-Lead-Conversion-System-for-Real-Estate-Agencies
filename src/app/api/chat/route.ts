@@ -190,6 +190,63 @@ function getClosingPeriodFollowUpQuestion() {
   return "Thanks. Now choose the visit period: morning or afternoon.";
 }
 
+function isMissingSenderColumnError(errorMessage: string | undefined) {
+  if (!errorMessage) return false;
+  return errorMessage.toLowerCase().includes("sender") && errorMessage.toLowerCase().includes("schema cache");
+}
+
+async function insertMessageCompat(
+  supabase: ReturnType<typeof getServerSupabase>,
+  leadId: string,
+  role: "user" | "assistant",
+  content: string,
+) {
+  const sender = role === "assistant" ? "ai" : "user";
+  const timestamp = new Date().toISOString();
+
+  let insertResult = await supabase.from("messages").insert({
+    lead_id: leadId,
+    sender,
+    role,
+    content,
+    timestamp,
+  });
+
+  if (!insertResult.error) {
+    return insertResult;
+  }
+
+  if (isMissingSenderColumnError(insertResult.error.message)) {
+    insertResult = await supabase.from("messages").insert({
+      lead_id: leadId,
+      role,
+      content,
+      timestamp,
+    });
+
+    if (!insertResult.error) {
+      return insertResult;
+    }
+  }
+
+  insertResult = await supabase.from("messages").insert({
+    lead_id: leadId,
+    sender,
+    content,
+    timestamp,
+  });
+
+  if (!insertResult.error) {
+    return insertResult;
+  }
+
+  return await supabase.from("messages").insert({
+    lead_id: leadId,
+    content,
+    timestamp,
+  });
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -245,11 +302,11 @@ export async function POST(request: Request) {
       currentLeadId = insertedLead.id;
     }
 
-    await supabase.from("messages").insert({
-      lead_id: currentLeadId,
-      role: "user",
-      content: message,
-    });
+    if (!currentLeadId) {
+      return NextResponse.json({ error: "Unable to resolve lead id" }, { status: 500 });
+    }
+
+    await insertMessageCompat(supabase, currentLeadId, "user", message);
 
     const { data: lead, error: leadLoadError } = await supabase
       .from("leads")
@@ -267,11 +324,7 @@ export async function POST(request: Request) {
       const finalLockedMessage =
         "✅ Your visit is already confirmed. Our agent will contact you shortly.";
 
-      await supabase.from("messages").insert({
-        lead_id: currentLeadId,
-        role: "assistant",
-        content: finalLockedMessage,
-      });
+      await insertMessageCompat(supabase, currentLeadId, "assistant", finalLockedMessage);
 
       await supabase.from("leads").update({ last_message_at: new Date().toISOString() }).eq("id", currentLeadId);
 
@@ -379,11 +432,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unable to update lead profile" }, { status: 500 });
     }
 
-    await supabase.from("messages").insert({
-      lead_id: currentLeadId,
-      role: "assistant",
-      content: assistantMessage,
-    });
+    await insertMessageCompat(supabase, currentLeadId, "assistant", assistantMessage);
 
     if (
       crmStatus === "hot" &&
