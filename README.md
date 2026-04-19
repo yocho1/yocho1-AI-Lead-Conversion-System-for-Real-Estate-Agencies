@@ -17,6 +17,7 @@ Production-ready MVP built with Next.js, Supabase, and OpenRouter to help real e
   - qualification status
   - conversation history
   - leads per day analytics
+  - business intelligence layer (funnel + conversion + response-time)
 - hot/new visual highlighting
 - Auto follow-up endpoint for inactive leads
 - Hot lead alert system (Resend email)
@@ -38,6 +39,7 @@ src/
 	app/
 		api/
 			analytics/leads-per-day/route.ts
+      analytics/summary/route.ts
 			chat/route.ts
 			follow-up/run/route.ts
 			leads/route.ts
@@ -50,10 +52,12 @@ src/
 		page.tsx
 	components/
 		analytics-card.tsx
+    analytics-summary-panel.tsx
 		chat-widget.tsx
 		dashboard-shell.tsx
 		leads-board.tsx
 	lib/
+    analytics.ts
 		ai.ts
 		calendar.ts
 		env.ts
@@ -63,6 +67,8 @@ src/
 		types.ts
 supabase/
 	schema.sql
+  seeds/
+    analytics_sample_data.sql
 tests/
 	qualification.test.ts
 ```
@@ -139,6 +145,29 @@ Open:
 
 - `GET /api/analytics/leads-per-day?agencyApiKey=...`
   - Returns simple daily lead counts
+
+- `GET /api/analytics/summary?agencyApiKey=...&days=14`
+  - Returns funnel (`visitor -> lead -> qualified -> booked`),
+  - conversion rate, average response time, leads/day,
+  - and chart-ready series (`leads_over_time`, `conversion_percent`).
+  - Persists per-day aggregate snapshots into `daily_stats`.
+
+## Analytics Validation (Sample Data)
+
+1. Run migrations (includes `daily_stats` table).
+2. Apply seed file: [supabase/seeds/analytics_sample_data.sql](supabase/seeds/analytics_sample_data.sql).
+3. Call:
+
+- `GET /api/analytics/summary?agencyApiKey=analytics-test-key&days=7`
+
+4. Expected summary from seed:
+
+- `visitor: 4`
+- `lead: 4`
+- `qualified: 3`
+- `booked: 1`
+- `conversion_rate: 25.00`
+- `avg_response_time_seconds: 140.00`
 
 - `GET /api/health/supabase`
   - Verifies server can reach Supabase and query `agencies`
