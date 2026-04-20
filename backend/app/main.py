@@ -21,14 +21,19 @@ supabase = get_supabase()
 
 
 def fetch_lead_contact(lead_id: str) -> dict | None:
-    result = (
-        supabase.table("leads")
-        .select("id,name,phone,email,preferred_channel")
-        .eq("id", lead_id)
-        .maybe_single()
-        .execute()
-    )
-    return result.data
+    try:
+        result = (
+            supabase.table("leads")
+            .select("id,name,phone,email,preferred_channel")
+            .eq("id", lead_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+    rows = result.data or []
+    return rows[0] if rows else None
 
 
 @app.get("/health")
