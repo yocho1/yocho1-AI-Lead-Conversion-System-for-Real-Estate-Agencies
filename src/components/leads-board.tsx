@@ -452,6 +452,10 @@ export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agency
 
   const loadAvailableSlots = async () => {
     if (!selectedLeadId) return;
+    if (!isOnline) {
+      setBookingError("You are offline. Reconnect to load available slots.");
+      return;
+    }
     if (!bookingAgentId.trim()) {
       setBookingError("Agent ID is required to load slots.");
       return;
@@ -499,6 +503,10 @@ export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agency
 
   const confirmBooking = async (slotIso: string) => {
     if (!selectedLeadId || bookingInProgress) return;
+    if (!isOnline) {
+      setBookingError("You are offline. Reconnect to confirm booking.");
+      return;
+    }
 
     setBookingInProgress(true);
     setBookingError(null);
