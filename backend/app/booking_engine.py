@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
+from postgrest.exceptions import APIError
 
 from .supabase_client import get_supabase
 
@@ -38,30 +39,47 @@ def _parse_time(value: str) -> time:
     return time.fromisoformat(value)
 
 
+def _is_missing_table_error(error: Exception, table_name: str) -> bool:
+    if not isinstance(error, APIError):
+        return False
+    message = str(error).lower()
+    return "pgrst205" in message and table_name.lower() in message
+
+
 def _fetch_agent_availability(agent_id: str, weekday: int) -> list[dict[str, Any]]:
-    result = (
-        supabase.table("agent_availability")
-        .select("agent_id,weekday,start_time,end_time,slot_minutes,active")
-        .eq("agent_id", agent_id)
-        .eq("weekday", weekday)
-        .eq("active", True)
-        .execute()
-    )
-    return result.data or []
+    try:
+        result = (
+            supabase.table("agent_availability")
+            .select("agent_id,weekday,start_time,end_time,slot_minutes,active")
+            .eq("agent_id", agent_id)
+            .eq("weekday", weekday)
+            .eq("active", True)
+            .execute()
+        )
+        return result.data or []
+    except Exception as exc:  # noqa: BLE001
+        if _is_missing_table_error(exc, "agent_availability"):
+            return []
+        raise
 
 
 def _fetch_bookings(agent_id: str, target_date: date) -> list[dict[str, Any]]:
     start_iso, end_iso = _date_range_bounds(target_date)
-    result = (
-        supabase.table("bookings")
-        .select("id,agent_id,datetime,status")
-        .eq("agent_id", agent_id)
-        .in_("status", list(ACTIVE_BOOKING_STATUSES))
-        .gte("datetime", start_iso)
-        .lte("datetime", end_iso)
-        .execute()
-    )
-    return result.data or []
+    try:
+        result = (
+            supabase.table("bookings")
+            .select("id,agent_id,datetime,status")
+            .eq("agent_id", agent_id)
+            .in_("status", list(ACTIVE_BOOKING_STATUSES))
+            .gte("datetime", start_iso)
+            .lte("datetime", end_iso)
+            .execute()
+        )
+        return result.data or []
+    except Exception as exc:  # noqa: BLE001
+        if _is_missing_table_error(exc, "bookings"):
+            return []
+        raise
 
 
 def get_available_slots(
@@ -102,15 +120,21 @@ def get_available_slots(
 def create_booking(lead_id: str, agent_id: str, slot_datetime: datetime, status: str = "confirmed") -> dict[str, Any] | None:
     slot_utc = _normalize_slot(slot_datetime)
 
-    existing = (
-        supabase.table("bookings")
-        .select("id")
-        .eq("agent_id", agent_id)
-        .eq("datetime", slot_utc.isoformat())
-        .in_("status", list(ACTIVE_BOOKING_STATUSES))
-        .limit(1)
-        .execute()
-    )
+    try:
+        existing = (
+            supabase.table("bookings")
+            .select("id")
+            .eq("agent_id", agent_id)
+            .eq("datetime", slot_utc.isoformat())
+            .in_("status", list(ACTIVE_BOOKING_STATUSES))
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        if _is_missing_table_error(exc, "bookings"):
+            return None
+        raise
+
     if existing.data:
         return None
 
@@ -123,7 +147,9 @@ def create_booking(lead_id: str, agent_id: str, slot_datetime: datetime, status:
 
     try:
         inserted = supabase.table("bookings").insert(payload).execute()
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        if _is_missing_table_error(exc, "bookings"):
+            return None
         return None
 
     return (inserted.data or [None])[0]
@@ -133,9 +159,14 @@ def suggest_available_times(agent_id: str | None = None, days_ahead: int = 3) ->
     target_agent = (agent_id or "").strip()
 
     if not target_agent:
-        result = supabase.table("agent_availability").select("agent_id").eq("active", True).limit(1).execute()
-        first = (result.data or [None])[0]
-        target_agent = str((first or {}).get("agent_id") or "").strip()
+        try:
+            result = supabase.table("agent_availability").select("agent_id").eq("active", True).limit(1).execute()
+            first = (result.data or [None])[0]
+            target_agent = str((first or {}).get("agent_id") or "").strip()
+        except Exception as exc:  # noqa: BLE001
+            if _is_missing_table_error(exc, "agent_availability"):
+                return "No available slots are configured yet."
+            raise
 
     if not target_agent:
         return "No available slots are configured yet."
