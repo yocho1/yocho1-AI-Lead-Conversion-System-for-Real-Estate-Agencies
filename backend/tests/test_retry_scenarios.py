@@ -140,3 +140,36 @@ def test_force_whatsapp_api_failure(monkeypatch) -> None:
         assert "forced whatsapp api failure" in str(exc)
 
     assert deleted_keys == ["idempotency:whatsapp:evt-force-fail"]
+
+
+def test_hot_decision_triggers_property_matching(monkeypatch) -> None:
+    called = {"matching": 0, "message": 0, "notify": 0}
+
+    def fake_match_properties(lead: dict) -> list[dict]:
+        called["matching"] += 1
+        return [{"id": "prop-1"}, {"id": "prop-2"}]
+
+    def fake_generate_matching_message(matches: list[dict]) -> str:
+        called["message"] += 1
+        return f"We found {len(matches)} properties matching your needs"
+
+    async def fake_send_hot_lead_notification(agency_id: str, lead: dict, event_id: str, recommendation_message: str | None = None) -> None:
+        called["notify"] += 1
+        assert recommendation_message == "We found 2 properties matching your needs"
+
+    monkeypatch.setattr(processor, "match_properties", fake_match_properties)
+    monkeypatch.setattr(processor, "generate_matching_message", fake_generate_matching_message)
+    monkeypatch.setattr(processor, "send_hot_lead_notification", fake_send_hot_lead_notification)
+    monkeypatch.setattr(processor, "log_event", lambda *args, **kwargs: None)
+
+    processor.execute_decision_action(
+        agency_id="agency-1",
+        lead_id="lead-1",
+        event_id="evt-hot-1",
+        decision={"action": "send_whatsapp"},
+        lead={"id": "lead-1", "name": "Test", "budget": "1000000", "location": {"city": "casablanca"}},
+    )
+
+    assert called["matching"] == 1
+    assert called["message"] == 1
+    assert called["notify"] == 1
