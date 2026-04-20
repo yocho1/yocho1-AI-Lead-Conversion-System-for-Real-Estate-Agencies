@@ -12,13 +12,20 @@ function isNoisyFailedFetch(reason: unknown) {
   const lowerStack = stack.toLowerCase();
 
   const isNetworkFetchFailure = lowerMessage.includes("failed to fetch") || lowerMessage.includes("err_internet_disconnected");
+  const isDisconnectedCode = lowerMessage.includes("err_internet_disconnected");
   const isExtensionOrigin =
     lowerStack.includes("chrome-extension://") ||
     lowerStack.includes("frame_ant.js") ||
     lowerMessage.includes("chrome-extension://") ||
     lowerMessage.includes("frame_ant.js");
+  const isNextDevtoolsNoise =
+    lowerStack.includes("next-devtools") ||
+    lowerMessage.includes("__nextjs_original-stack-frames");
 
-  return isNetworkFetchFailure && (isExtensionOrigin || (typeof navigator !== "undefined" && !navigator.onLine));
+  return (
+    isNetworkFetchFailure &&
+    (isExtensionOrigin || isNextDevtoolsNoise || isDisconnectedCode || (typeof navigator !== "undefined" && !navigator.onLine))
+  );
 }
 
 async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
@@ -551,17 +558,34 @@ export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agency
         hour: "2-digit",
         minute: "2-digit",
       });
+      const confirmationText = `Visit confirmed for ${readableTime} with agent ${bookingAgentId.trim()}.`;
 
       setBookingSuccess(`Visit confirmed for ${readableTime}.`);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `booking-${Date.now()}`,
+
+      // Persist confirmation message so periodic polling doesn't drop it.
+      const messageResponse = await safeFetch(`/api/leads/${selectedLeadId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agencyApiKey,
           sender: "agent",
-          content: `Visit confirmed for ${readableTime} with agent ${bookingAgentId.trim()}.`,
-          timestamp: new Date().toISOString(),
-        },
-      ]);
+          content: confirmationText,
+        }),
+      });
+
+      if (messageResponse && messageResponse.ok) {
+        const messagePayload = await messageResponse.json();
+        if (messagePayload?.message) {
+          setMessages((prev) => [...prev, messagePayload.message as ConversationMessage]);
+        }
+      }
+
+      const refreshResponse = await safeFetch(`/api/leads/${selectedLeadId}/messages?agencyApiKey=${agencyApiKey}`);
+      if (refreshResponse && refreshResponse.ok) {
+        const refreshData = await refreshResponse.json();
+        setMessages(refreshData.messages || []);
+      }
+
       setBookingSlots((prev) => prev.filter((slot) => slot !== slotIso));
     } catch (error) {
       setBookingError(error instanceof Error ? error.message : "Unable to confirm booking.");
