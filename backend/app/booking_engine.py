@@ -16,6 +16,11 @@ def _ensure_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def _normalize_slot(value: datetime) -> datetime:
+    # Bookings are treated at minute granularity to avoid second-level duplicates.
+    return _ensure_utc(value).replace(second=0, microsecond=0)
+
+
 def _date_range_bounds(target_date: date) -> tuple[str, str]:
     start = datetime.combine(target_date, time.min, tzinfo=timezone.utc)
     end = datetime.combine(target_date, time.max, tzinfo=timezone.utc)
@@ -69,7 +74,7 @@ def get_available_slots(
     bookings = booking_rows if booking_rows is not None else _fetch_bookings(agent_id, target_date)
 
     taken = {
-        _ensure_utc(datetime.fromisoformat(str(item.get("datetime") or ""))).replace(microsecond=0)
+        _normalize_slot(datetime.fromisoformat(str(item.get("datetime") or "")))
         for item in bookings
         if str(item.get("status") or "").lower() in ACTIVE_BOOKING_STATUSES and item.get("datetime")
     }
@@ -85,7 +90,7 @@ def get_available_slots(
 
         cursor = start_at
         while cursor + step <= end_at:
-            normalized = cursor.replace(microsecond=0)
+            normalized = _normalize_slot(cursor)
             if normalized not in taken:
                 slots.append(normalized)
             cursor += step
@@ -95,7 +100,7 @@ def get_available_slots(
 
 
 def create_booking(lead_id: str, agent_id: str, slot_datetime: datetime, status: str = "confirmed") -> dict[str, Any] | None:
-    slot_utc = _ensure_utc(slot_datetime).replace(microsecond=0)
+    slot_utc = _normalize_slot(slot_datetime)
 
     existing = (
         supabase.table("bookings")
