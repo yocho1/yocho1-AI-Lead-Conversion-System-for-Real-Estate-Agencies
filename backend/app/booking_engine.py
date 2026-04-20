@@ -11,6 +11,10 @@ supabase = get_supabase()
 ACTIVE_BOOKING_STATUSES = {"pending", "confirmed"}
 
 
+class BookingStorageNotInitializedError(RuntimeError):
+    pass
+
+
 def _ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
@@ -59,7 +63,7 @@ def _fetch_agent_availability(agent_id: str, weekday: int) -> list[dict[str, Any
         return result.data or []
     except Exception as exc:  # noqa: BLE001
         if _is_missing_table_error(exc, "agent_availability"):
-            return []
+            raise BookingStorageNotInitializedError("agent_availability table is not initialized") from exc
         raise
 
 
@@ -78,7 +82,7 @@ def _fetch_bookings(agent_id: str, target_date: date) -> list[dict[str, Any]]:
         return result.data or []
     except Exception as exc:  # noqa: BLE001
         if _is_missing_table_error(exc, "bookings"):
-            return []
+            raise BookingStorageNotInitializedError("bookings table is not initialized") from exc
         raise
 
 

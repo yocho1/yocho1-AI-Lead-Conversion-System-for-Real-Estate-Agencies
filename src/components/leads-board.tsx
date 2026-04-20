@@ -479,6 +479,12 @@ export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agency
         throw new Error(data.error || "Unable to load available slots.");
       }
 
+      if (data.configured === false) {
+        setBookingSlots([]);
+        setBookingError(data.message || "Booking system is not initialized in Supabase yet.");
+        return;
+      }
+
       setBookingSlots(Array.isArray(data.slots) ? data.slots : []);
       if (!data.slots || data.slots.length === 0) {
         setBookingError("No available slots for this date.");

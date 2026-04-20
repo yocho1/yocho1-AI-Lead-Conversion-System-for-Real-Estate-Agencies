@@ -46,6 +46,8 @@ export async function GET(request: Request) {
       agent_id: data?.agent_id || agentId,
       date: data?.date || date,
       slots: Array.isArray(data?.slots) ? data.slots : [],
+      configured: typeof data?.configured === "boolean" ? data.configured : true,
+      message: typeof data?.message === "string" ? data.message : null,
     });
   } catch {
     return NextResponse.json({ error: "Backend booking service unavailable" }, { status: 502 });

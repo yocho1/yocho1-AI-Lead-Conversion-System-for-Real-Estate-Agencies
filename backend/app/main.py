@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 
-from .booking_engine import create_booking, get_available_slots
+from .booking_engine import BookingStorageNotInitializedError, create_booking, get_available_slots
 from .channel_router import route_message
 from .events import emit_event
 from .models import BookingRequest, LeadCreateRequest
@@ -43,11 +43,22 @@ def available_slots(agent_id: str, date: str) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD") from exc
 
-    slots = get_available_slots(agent_id=agent_id, target_date=target_date)
+    try:
+        slots = get_available_slots(agent_id=agent_id, target_date=target_date)
+    except BookingStorageNotInitializedError:
+        return {
+            "agent_id": agent_id,
+            "date": target_date.isoformat(),
+            "slots": [],
+            "configured": False,
+            "message": "Booking tables are not initialized in Supabase.",
+        }
+
     return {
         "agent_id": agent_id,
         "date": target_date.isoformat(),
         "slots": slots,
+        "configured": True,
     }
 
 
