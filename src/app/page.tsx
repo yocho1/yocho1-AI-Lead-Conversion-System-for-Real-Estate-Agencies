@@ -5,11 +5,13 @@ import { HeroDashboardPreview } from "@/components/hero-dashboard-preview";
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ agencyKey?: string; demo?: string }>;
+  searchParams: Promise<{ agencyKey?: string; demo?: string; source?: string; campaign_id?: string; campaignId?: string }>;
 }) {
   const params = await searchParams;
   const agencyApiKey = params.agencyKey || "demo-agency-key";
   const demoMode = params.demo === "true";
+  const source = params.source;
+  const campaignId = params.campaign_id || params.campaignId;
 
   return (
     <main className="container" style={{ paddingBlock: "2.5rem 4rem" }}>
@@ -64,7 +66,7 @@ export default async function Home({
         </div>
       </section>
 
-      <ChatWidget agencyApiKey={agencyApiKey} demoMode={demoMode} />
+      <ChatWidget agencyApiKey={agencyApiKey} demoMode={demoMode} source={source} campaignId={campaignId} />
     </main>
   );
 }
