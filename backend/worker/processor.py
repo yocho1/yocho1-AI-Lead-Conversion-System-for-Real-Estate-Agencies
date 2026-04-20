@@ -7,6 +7,7 @@ import redis
 from backend.app.config import get_settings
 from backend.app.channel_router import route_message
 from backend.app.decision_engine import decide_next_action
+from backend.app.booking_engine import suggest_available_times
 from backend.app.event_store import (
     EVENT_STATUS_DEAD_LETTER,
     EVENT_STATUS_FAILED,
@@ -137,6 +138,7 @@ def execute_decision_action(agency_id: str, lead_id: str, event_id: str, decisio
     if action == "send_whatsapp":
         matches = match_properties(lead)
         recommendation_message = generate_matching_message(matches)
+        booking_suggestion = suggest_available_times(str(lead.get("agent_id") or "") or None)
         log_event(
             agency_id,
             lead_id,
@@ -145,7 +147,22 @@ def execute_decision_action(agency_id: str, lead_id: str, event_id: str, decisio
             f"{recommendation_message}; top_ids={[item.get('id') for item in matches[:3]]}",
             event_id=event_id,
         )
-        asyncio.run(send_hot_lead_notification(agency_id, lead, event_id, recommendation_message))
+        log_event(
+            agency_id,
+            lead_id,
+            HOT_EVENT,
+            "booking_suggestion",
+            booking_suggestion,
+            event_id=event_id,
+        )
+        asyncio.run(
+            send_hot_lead_notification(
+                agency_id,
+                lead,
+                event_id,
+                f"{recommendation_message}. {booking_suggestion}",
+            )
+        )
         return
 
     if action == "schedule_followup":

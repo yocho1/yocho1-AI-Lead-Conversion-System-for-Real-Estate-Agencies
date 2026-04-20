@@ -1,8 +1,11 @@
+import asyncio
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 
+from .booking_engine import create_booking, get_available_slots
+from .channel_router import route_message
 from .events import emit_event
-from .models import LeadCreateRequest
+from .models import BookingRequest, LeadCreateRequest
 from .normalization import (
     compute_status,
     normalize_budget,
@@ -17,9 +20,83 @@ app = FastAPI(title="Lead Conversion Event API", version="1.0.0")
 supabase = get_supabase()
 
 
+def fetch_lead_contact(lead_id: str) -> dict | None:
+    result = (
+        supabase.table("leads")
+        .select("id,name,phone,email,preferred_channel")
+        .eq("id", lead_id)
+        .maybe_single()
+        .execute()
+    )
+    return result.data
+
+
 @app.get("/health")
 def health() -> dict:
     return {"ok": True}
+
+
+@app.get("/available-slots")
+def available_slots(agent_id: str, date: str) -> dict:
+    try:
+        target_date = datetime.fromisoformat(date).date()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD") from exc
+
+    slots = get_available_slots(agent_id=agent_id, target_date=target_date)
+    return {
+        "agent_id": agent_id,
+        "date": target_date.isoformat(),
+        "slots": slots,
+    }
+
+
+@app.post("/book")
+def book_visit(payload: BookingRequest) -> dict:
+    booking = create_booking(
+        lead_id=payload.lead_id,
+        agent_id=payload.agent_id,
+        slot_datetime=payload.datetime,
+        status=payload.status,
+    )
+
+    if booking is None:
+        raise HTTPException(status_code=409, detail="Selected slot is already booked")
+
+    lead = fetch_lead_contact(payload.lead_id)
+    if not lead:
+        return {
+            "booking": booking,
+            "delivery": {"status": "skipped", "message": "Lead contact not found"},
+        }
+
+    recipient = lead.get("phone") or lead.get("email")
+    if not recipient:
+        return {
+            "booking": booking,
+            "delivery": {"status": "skipped", "message": "Lead has no contact channel"},
+        }
+
+    confirmation_message = (
+        f"Visit confirmed for {payload.datetime.astimezone(timezone.utc).isoformat()} with agent {payload.agent_id}."
+    )
+    delivery = asyncio.run(
+        route_message(
+            lead=lead,
+            to=str(recipient),
+            content=confirmation_message,
+            metadata={"event_type": "booking.confirmed", "booking_id": booking.get("id")},
+        )
+    )
+
+    return {
+        "booking": booking,
+        "delivery": {
+            "status": delivery.status,
+            "channel": delivery.channel,
+            "ok": delivery.ok,
+        },
+    }
 
 
 @app.post(
