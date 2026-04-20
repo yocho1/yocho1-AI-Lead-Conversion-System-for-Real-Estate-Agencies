@@ -18,6 +18,7 @@ class LeadCreateRequest(BaseModel):
     location: Location | None = None
     property_type: str | None = None
     timeline: str | None = None
+    preferred_channel: Literal["whatsapp", "sms", "email"] | None = None
 
     @model_validator(mode="after")
     def validate_contact(self):

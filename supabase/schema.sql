@@ -27,6 +27,9 @@ create table if not exists public.leads (
   property_type text,
   buying_timeline text,
   timeline_normalized text,
+  preferred_channel text,
+  last_channel_used text,
+  delivery_status text not null default 'pending' check (delivery_status in ('pending', 'sent', 'failed')),
   status text not null default 'cold' check (status in ('hot', 'warm', 'cold')),
   preferred_visit_day text,
   preferred_visit_period text,
@@ -163,6 +166,9 @@ alter table public.leads add column if not exists currency text;
 alter table public.leads add column if not exists location_city text;
 alter table public.leads add column if not exists location_country text;
 alter table public.leads add column if not exists timeline_normalized text;
+alter table public.leads add column if not exists preferred_channel text;
+alter table public.leads add column if not exists last_channel_used text;
+alter table public.leads add column if not exists delivery_status text not null default 'pending';
 alter table public.leads add column if not exists lead_state jsonb not null default jsonb_build_object(
   'id', null,
   'name', null,
@@ -195,6 +201,12 @@ alter table public.leads drop constraint if exists leads_lead_category_check;
 alter table public.leads add constraint leads_lead_category_check check (lead_category in ('HOT', 'WARM', 'COLD') or lead_category is null);
 alter table public.leads drop constraint if exists leads_next_action_check;
 alter table public.leads add constraint leads_next_action_check check (next_action in ('send_whatsapp', 'schedule_followup', 'none') or next_action is null);
+alter table public.leads drop constraint if exists leads_preferred_channel_check;
+alter table public.leads add constraint leads_preferred_channel_check check (preferred_channel in ('whatsapp', 'sms', 'email') or preferred_channel is null);
+alter table public.leads drop constraint if exists leads_last_channel_used_check;
+alter table public.leads add constraint leads_last_channel_used_check check (last_channel_used in ('whatsapp', 'sms', 'email') or last_channel_used is null);
+alter table public.leads drop constraint if exists leads_delivery_status_check;
+alter table public.leads add constraint leads_delivery_status_check check (delivery_status in ('pending', 'sent', 'failed'));
 alter table public.event_outbox add column if not exists event_id text;
 alter table public.event_outbox add column if not exists agency_id text;
 alter table public.event_outbox add column if not exists lead_id uuid;
@@ -208,6 +220,8 @@ create index if not exists idx_leads_agency_id on public.leads(agency_id);
 create index if not exists idx_leads_last_message_at on public.leads(last_message_at desc);
 create index if not exists idx_leads_lead_score on public.leads(lead_score desc);
 create index if not exists idx_leads_lead_category on public.leads(lead_category);
+create index if not exists idx_leads_delivery_status on public.leads(delivery_status);
+create index if not exists idx_leads_last_channel_used on public.leads(last_channel_used);
 create index if not exists idx_messages_lead_id_timestamp on public.messages(lead_id, timestamp desc);
 create index if not exists idx_messages_agency_lead_timestamp on public.messages(agency_id, lead_id, timestamp desc);
 create index if not exists idx_messages_sender on public.messages(sender);
