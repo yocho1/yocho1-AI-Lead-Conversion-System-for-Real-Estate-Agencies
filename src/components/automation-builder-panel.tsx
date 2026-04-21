@@ -36,11 +36,12 @@ const EXAMPLE_ACTION = JSON.stringify(
 );
 
 export function AutomationBuilderPanel({ agencyApiKey }: Readonly<AutomationBuilderPanelProps>) {
-  const [trigger, setTrigger] = useState("lead.created");
-  const [condition, setCondition] = useState(EXAMPLE_CONDITION);
-  const [action, setAction] = useState(EXAMPLE_ACTION);
+  const [trigger, setTrigger] = useState("");
+  const [condition, setCondition] = useState("");
+  const [action, setAction] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [configured, setConfigured] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [rules, setRules] = useState<AutomationRule[]>([]);
@@ -55,6 +56,10 @@ export function AutomationBuilderPanel({ agencyApiKey }: Readonly<AutomationBuil
       if (!response.ok) {
         throw new Error(data.error || "Unable to load automation rules");
       }
+      setConfigured(data.configured !== false);
+      if (data.configured === false && data.error) {
+        setError(data.error);
+      }
       setRules(data.automations || []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load automation rules");
@@ -68,6 +73,27 @@ export function AutomationBuilderPanel({ agencyApiKey }: Readonly<AutomationBuil
   }, [loadRules]);
 
   const onCreateRule = async () => {
+    if (!trigger.trim()) {
+      setError("Trigger is required.");
+      return;
+    }
+
+    if (condition.trim()) {
+      try {
+        JSON.parse(condition);
+      } catch {
+        setError("Condition JSON is invalid.");
+        return;
+      }
+    }
+
+    try {
+      JSON.parse(action);
+    } catch {
+      setError("Action JSON is invalid.");
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -139,7 +165,7 @@ export function AutomationBuilderPanel({ agencyApiKey }: Readonly<AutomationBuil
       </label>
 
       <div className="mt-2 flex flex-wrap gap-2">
-        <AppButton variant="primary" onClick={() => void onCreateRule()} disabled={saving}>
+        <AppButton variant="primary" onClick={() => void onCreateRule()} disabled={saving || !configured}>
           {saving ? "Saving..." : "Create Rule"}
         </AppButton>
         <AppButton
@@ -148,11 +174,19 @@ export function AutomationBuilderPanel({ agencyApiKey }: Readonly<AutomationBuil
             setTrigger("lead.created");
             setCondition(EXAMPLE_CONDITION);
             setAction(EXAMPLE_ACTION);
+            setSuccess("Example loaded. You can now create the rule.");
+            setError(null);
           }}
         >
           Load Example
         </AppButton>
       </div>
+
+      {!configured && (
+        <p className="mt-2 text-sm text-amber-500">
+          Automation storage is not configured yet. Run the latest Supabase schema migration to enable rule creation.
+        </p>
+      )}
 
       {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
       {success && <p className="mt-2 text-sm text-emerald-500">{success}</p>}
