@@ -105,6 +105,15 @@ create table if not exists public.bookings (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.automations (
+  id uuid primary key default gen_random_uuid(),
+  agency_id uuid not null references public.agencies(id) on delete cascade,
+  trigger text not null,
+  condition text,
+  action text not null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.daily_stats (
   agency_id uuid not null references public.agencies(id) on delete cascade,
   stat_date date not null,
@@ -264,6 +273,7 @@ create index if not exists idx_properties_city on public.properties(city);
 create index if not exists idx_properties_city_price on public.properties(city, price);
 create index if not exists idx_properties_type on public.properties(type);
 create index if not exists idx_agent_availability_agent_weekday on public.agent_availability(agent_id, weekday);
+create index if not exists idx_automations_agency_trigger on public.automations(agency_id, trigger);
 create index if not exists idx_bookings_agent_datetime on public.bookings(agent_id, datetime);
 create unique index if not exists idx_bookings_unique_active_slot on public.bookings(agent_id, datetime)
 where status in ('pending', 'confirmed');
