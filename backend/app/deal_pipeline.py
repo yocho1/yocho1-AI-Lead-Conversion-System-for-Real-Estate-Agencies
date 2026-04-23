@@ -178,24 +178,29 @@ def get_pipeline_summary(agency_id: str) -> Dict[str, Any]:
     total_pipeline_value = 0.0
     closed_revenue = 0.0
     stage_counts = {stage.value: 0 for stage in DealStage}
+    stage_value_totals = {stage.value: 0.0 for stage in DealStage}
 
     for deal in deals:
         stage = deal.get("stage", DealStage.NEW_LEAD.value)
         value = float(deal.get("deal_value") or 0)
         stage_counts[stage] = stage_counts.get(stage, 0) + 1
+        stage_value_totals[stage] = round(stage_value_totals.get(stage, 0.0) + value, 2)
         if stage == DealStage.CLOSED.value:
             closed_revenue += value
         elif stage != DealStage.LOST.value:
             total_pipeline_value += value
 
     conversion_rate = (stage_counts[DealStage.CLOSED.value] / total_deals * 100) if total_deals else 0.0
+    expected_revenue = closed_revenue + total_pipeline_value * 0.35
 
     return {
         "total_deals": total_deals,
         "total_pipeline_value": round(total_pipeline_value, 2),
         "closed_revenue": round(closed_revenue, 2),
         "conversion_rate": round(conversion_rate, 2),
+        "expected_revenue": round(expected_revenue, 2),
         "by_stage": stage_counts,
+        "stage_value_totals": stage_value_totals,
     }
 
 

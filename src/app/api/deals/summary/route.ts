@@ -36,12 +36,16 @@ export async function GET(request: Request) {
   const byStage: Record<string, number> = Object.fromEntries(
     STAGES.map((stage) => [stage, 0])
   );
+  const stageValueTotals: Record<string, number> = Object.fromEntries(
+    STAGES.map((stage) => [stage, 0])
+  );
 
   for (const deal of deals) {
     const stage = deal.stage || "NEW_LEAD";
     const value = Number(deal.deal_value || 0);
 
     byStage[stage] = (byStage[stage] || 0) + 1;
+    stageValueTotals[stage] = Number(((stageValueTotals[stage] || 0) + value).toFixed(2));
 
     if (stage === "CLOSED") {
       closedRevenue += value;
@@ -60,5 +64,6 @@ export async function GET(request: Request) {
     conversion_rate: Number(conversionRate.toFixed(2)),
     expected_revenue: Number(expectedRevenue.toFixed(2)),
     by_stage: byStage,
+    stage_value_totals: stageValueTotals,
   });
 }
