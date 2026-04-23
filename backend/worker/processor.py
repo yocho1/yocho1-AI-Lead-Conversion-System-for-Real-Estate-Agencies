@@ -9,6 +9,7 @@ from backend.app.channel_router import route_message
 from backend.app.decision_engine import decide_next_action
 from backend.app.booking_engine import suggest_available_times
 from backend.app.automation_engine import run_automations_for_event
+from backend.app.deal_pipeline import create_deal, transition_stage
 from backend.app.event_store import (
     EVENT_STATUS_DEAD_LETTER,
     EVENT_STATUS_FAILED,
@@ -232,6 +233,78 @@ def execute_automation_rules(event_type: str, payload: dict, event_id: str) -> N
     )
 
 
+def execute_deal_pipeline_rules(event_type: str, payload: dict, event_id: str) -> None:
+    agency_id = str(payload.get("agency_id") or "")
+    lead_id = str(payload.get("lead_id") or "")
+
+    if not agency_id or not lead_id:
+        return
+
+    try:
+        # Auto-create a deal when lead is HOT.
+        lead_category = str(payload.get("lead_category") or "").upper()
+        if lead_category == "HOT" or event_type == HOT_EVENT:
+            try:
+                create_deal(agency_id=agency_id, lead_id=lead_id)
+                log_event(
+                    agency_id,
+                    lead_id,
+                    event_type,
+                    "deal_created",
+                    "Deal auto-created in NEW_LEAD stage",
+                    event_id=event_id,
+                )
+            except ValueError as exc:
+                # Ignore duplicate deal creation attempts.
+                if "already exists" not in str(exc):
+                    raise
+
+        # Load existing deal for stage transitions.
+        deal_result = (
+            supabase.table("deals")
+            .select("id,stage")
+            .eq("agency_id", agency_id)
+            .eq("lead_id", lead_id)
+            .limit(1)
+            .execute()
+        )
+        deal = (deal_result.data or [None])[0]
+        if not deal:
+            return
+
+        deal_id = str(deal.get("id"))
+        target_stage: str | None = None
+
+        if event_type == "lead.booked" or bool(payload.get("booking_confirmed")):
+            target_stage = "VISIT_SCHEDULED"
+        elif bool(payload.get("user_accepted")):
+            target_stage = "OFFER_MADE"
+        elif bool(payload.get("deal_closed")):
+            target_stage = "CLOSED"
+
+        if not target_stage or target_stage == deal.get("stage"):
+            return
+
+        transition_stage(deal_id=deal_id, new_stage=target_stage, changed_by="system")
+        log_event(
+            agency_id,
+            lead_id,
+            event_type,
+            "deal_stage_updated",
+            f"Deal moved to {target_stage}",
+            event_id=event_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log_event(
+            agency_id,
+            lead_id,
+            event_type,
+            "deal_pipeline_error",
+            f"Deal pipeline execution failed: {exc}",
+            event_id=event_id,
+        )
+
+
 def build_hot_lead_message(lead: dict, recommendation_message: str | None = None) -> str:
     base = (
         f"HOT LEAD: {lead.get('name') or 'Unknown'} | "
@@ -417,6 +490,7 @@ def process_event(message: dict) -> None:
             return
 
         execute_automation_rules(event_type, payload, event_id)
+        execute_deal_pipeline_rules(event_type, payload, event_id)
 
         evaluate_and_decide(agency_id, lead_id, event_id, event_type)
 
