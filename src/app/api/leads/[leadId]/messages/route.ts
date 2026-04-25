@@ -81,7 +81,20 @@ function sliceLatestSession(messages: DbMessage[]) {
 
 function isMissingSenderColumnError(errorMessage: string | undefined) {
   if (!errorMessage) return false;
-  return errorMessage.toLowerCase().includes("sender") && errorMessage.toLowerCase().includes("schema cache");
+  const normalized = errorMessage.toLowerCase();
+  return (
+    normalized.includes("sender") &&
+    (normalized.includes("schema cache") || normalized.includes("does not exist"))
+  );
+}
+
+function isMissingAgencyIdColumnError(errorMessage: string | undefined) {
+  if (!errorMessage) return false;
+  const normalized = errorMessage.toLowerCase();
+  return (
+    normalized.includes("agency_id") &&
+    (normalized.includes("schema cache") || normalized.includes("does not exist"))
+  );
 }
 
 function mapRoleToSender(role: "user" | "assistant" | null | undefined): "user" | "ai" | "agent" {
@@ -117,52 +130,108 @@ async function readMessagesCompat(
   leadId: string,
   agencyId: string,
 ): Promise<DbMessage[]> {
-  const senderQuery = await supabase
+  const mapRows = (rows: MessageReadRow[]) =>
+    rows.map((row) => ({
+      id: row.id,
+      sender: decodeSenderAndContent(row).sender,
+      content: decodeSenderAndContent(row).content,
+      timestamp: row.timestamp,
+    }));
+
+  let senderQuery = await supabase
     .from("messages")
     .select("id,sender,content,timestamp")
     .eq("agency_id", agencyId)
     .eq("lead_id", leadId)
     .order("timestamp", { ascending: true });
 
-  if (!senderQuery.error) {
-    return ((senderQuery.data || []) as MessageReadRow[]).map((row) => ({
-      id: row.id,
-      sender: decodeSenderAndContent(row).sender,
-      content: decodeSenderAndContent(row).content,
-      timestamp: row.timestamp,
-    }));
+  if (senderQuery.error && isMissingAgencyIdColumnError(senderQuery.error.message)) {
+    senderQuery = await supabase
+      .from("messages")
+      .select("id,sender,content,timestamp")
+      .eq("lead_id", leadId)
+      .order("timestamp", { ascending: true });
   }
 
-  const roleQuery = await supabase
+  if (!senderQuery.error) {
+    const senderRows = (senderQuery.data || []) as MessageReadRow[];
+    if (senderRows.length > 0) {
+      return mapRows(senderRows);
+    }
+
+    const senderUnscopedQuery = await supabase
+      .from("messages")
+      .select("id,sender,content,timestamp")
+      .eq("lead_id", leadId)
+      .order("timestamp", { ascending: true });
+
+    if (!senderUnscopedQuery.error) {
+      return mapRows((senderUnscopedQuery.data || []) as MessageReadRow[]);
+    }
+  }
+
+  let roleQuery = await supabase
     .from("messages")
     .select("id,role,content,timestamp")
     .eq("agency_id", agencyId)
     .eq("lead_id", leadId)
     .order("timestamp", { ascending: true });
 
-  if (!roleQuery.error) {
-    return ((roleQuery.data || []) as MessageReadRow[]).map((row) => ({
-      id: row.id,
-      sender: decodeSenderAndContent(row).sender,
-      content: decodeSenderAndContent(row).content,
-      timestamp: row.timestamp,
-    }));
+  if (roleQuery.error && isMissingAgencyIdColumnError(roleQuery.error.message)) {
+    roleQuery = await supabase
+      .from("messages")
+      .select("id,role,content,timestamp")
+      .eq("lead_id", leadId)
+      .order("timestamp", { ascending: true });
   }
 
-  const minimalQuery = await supabase
+  if (!roleQuery.error) {
+    const roleRows = (roleQuery.data || []) as MessageReadRow[];
+    if (roleRows.length > 0) {
+      return mapRows(roleRows);
+    }
+
+    const roleUnscopedQuery = await supabase
+      .from("messages")
+      .select("id,role,content,timestamp")
+      .eq("lead_id", leadId)
+      .order("timestamp", { ascending: true });
+
+    if (!roleUnscopedQuery.error) {
+      return mapRows((roleUnscopedQuery.data || []) as MessageReadRow[]);
+    }
+  }
+
+  let minimalQuery = await supabase
     .from("messages")
     .select("id,content,timestamp")
     .eq("agency_id", agencyId)
     .eq("lead_id", leadId)
     .order("timestamp", { ascending: true });
 
+  if (minimalQuery.error && isMissingAgencyIdColumnError(minimalQuery.error.message)) {
+    minimalQuery = await supabase
+      .from("messages")
+      .select("id,content,timestamp")
+      .eq("lead_id", leadId)
+      .order("timestamp", { ascending: true });
+  }
+
   if (!minimalQuery.error) {
-    return ((minimalQuery.data || []) as MessageReadRow[]).map((row) => ({
-      id: row.id,
-      sender: decodeSenderAndContent(row).sender,
-      content: decodeSenderAndContent(row).content,
-      timestamp: row.timestamp,
-    }));
+    const minimalRows = (minimalQuery.data || []) as MessageReadRow[];
+    if (minimalRows.length > 0) {
+      return mapRows(minimalRows);
+    }
+
+    const minimalUnscopedQuery = await supabase
+      .from("messages")
+      .select("id,content,timestamp")
+      .eq("lead_id", leadId)
+      .order("timestamp", { ascending: true });
+
+    if (!minimalUnscopedQuery.error) {
+      return mapRows((minimalUnscopedQuery.data || []) as MessageReadRow[]);
+    }
   }
 
   return [];
@@ -178,12 +247,22 @@ async function insertMessageCompat(
 ) {
   const timestamp = new Date().toISOString();
   const fallbackContent = encodeContentForFallback(sender, content);
+  let useAgencyColumn = true;
 
-  const bothInsert = await supabase
+  let bothInsert = await supabase
     .from("messages")
     .insert({ agency_id: agencyId, lead_id: leadId, sender, role, content, timestamp })
     .select("id,sender,role,content,timestamp")
     .single();
+
+  if (bothInsert.error && isMissingAgencyIdColumnError(bothInsert.error.message)) {
+    useAgencyColumn = false;
+    bothInsert = await supabase
+      .from("messages")
+      .insert({ lead_id: leadId, sender, role, content, timestamp })
+      .select("id,sender,role,content,timestamp")
+      .single();
+  }
 
   if (!bothInsert.error && bothInsert.data) {
     return {
@@ -199,7 +278,7 @@ async function insertMessageCompat(
 
   const roleInsert = await supabase
     .from("messages")
-    .insert({ agency_id: agencyId, lead_id: leadId, role, content: fallbackContent, timestamp })
+    .insert(useAgencyColumn ? { agency_id: agencyId, lead_id: leadId, role, content: fallbackContent, timestamp } : { lead_id: leadId, role, content: fallbackContent, timestamp })
     .select("id,role,content,timestamp")
     .single();
 
@@ -217,7 +296,7 @@ async function insertMessageCompat(
 
   const senderInsert = await supabase
     .from("messages")
-    .insert({ agency_id: agencyId, lead_id: leadId, sender, content, timestamp })
+    .insert(useAgencyColumn ? { agency_id: agencyId, lead_id: leadId, sender, content, timestamp } : { lead_id: leadId, sender, content, timestamp })
     .select("id,sender,content,timestamp")
     .single();
 
@@ -235,7 +314,7 @@ async function insertMessageCompat(
 
   const minimalInsert = await supabase
     .from("messages")
-    .insert({ agency_id: agencyId, lead_id: leadId, content: fallbackContent, timestamp })
+    .insert(useAgencyColumn ? { agency_id: agencyId, lead_id: leadId, content: fallbackContent, timestamp } : { lead_id: leadId, content: fallbackContent, timestamp })
     .select("id,content,timestamp")
     .single();
 
@@ -319,10 +398,6 @@ export async function GET(
   }
 
   const normalizedMessages = await readMessagesCompat(supabase, leadId, agencyContext.agencyId);
-
-  if (normalizedMessages.length === 0 && agencyContext.agencyApiKey === "demo-agency-key") {
-    return NextResponse.json({ messages: buildDemoConversation(leadId) });
-  }
 
   const messages = latestOnly ? sliceLatestSession(normalizedMessages) : normalizedMessages;
   return NextResponse.json({ messages });

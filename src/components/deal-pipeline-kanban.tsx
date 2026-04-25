@@ -14,6 +14,17 @@ function formatCurrency(value: number | null | undefined): string {
   }).format(value);
 }
 
+async function parseJsonSafely<T = unknown>(response: Response): Promise<T | { error: string }> {
+  const text = await response.text();
+  if (!text) return { error: "Empty response" };
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text };
+  }
+}
+
 interface Deal {
   id: string;
   lead_id: string;
@@ -115,21 +126,53 @@ export function DealPipelineKanban({
   const loadPipeline = useCallback(async () => {
     try {
       setLoading(true);
+      setStatusMessage("");
 
       // Load pipeline
       const pipelineRes = await fetch(`/api/deals/pipeline?agencyApiKey=${agencyApiKey}`);
-      if (!pipelineRes.ok) throw new Error("Failed to load pipeline");
-      const pipelineData = await pipelineRes.json();
-      setPipeline(pipelineData);
+      const pipelineData = await parseJsonSafely(pipelineRes);
+      if (!pipelineRes.ok) {
+        throw new Error((pipelineData as { error?: string }).error || "Failed to load pipeline");
+      }
+
+      if ((pipelineData as { configured?: boolean }).configured === false) {
+        setPipeline(((pipelineData as { pipeline?: Pipeline }).pipeline || {}));
+        setSummary({
+          total_deals: 0,
+          total_pipeline_value: 0,
+          closed_revenue: 0,
+          lost_deals: 0,
+          active_deals: 0,
+          conversion_rate: 0,
+          by_stage: {
+            NEW_LEAD: 0,
+            QUALIFIED: 0,
+            VISIT_SCHEDULED: 0,
+            NEGOTIATION: 0,
+            OFFER_MADE: 0,
+            CLOSED: 0,
+            LOST: 0,
+          },
+        });
+        setStatusMessage(
+          (pipelineData as { error?: string }).error
+          || "Deals pipeline is not initialized. Run the latest Supabase schema migration."
+        );
+        return;
+      }
+
+      setPipeline((pipelineData as { pipeline?: Pipeline }).pipeline || {});
 
       // Load summary
       const summaryRes = await fetch(`/api/deals/summary?agencyApiKey=${agencyApiKey}`);
-      if (!summaryRes.ok) throw new Error("Failed to load summary");
-      const summaryData = await summaryRes.json();
-      setSummary(summaryData);
+      const summaryData = await parseJsonSafely(summaryRes);
+      if (!summaryRes.ok) {
+        throw new Error((summaryData as { error?: string }).error || "Failed to load summary");
+      }
+      setSummary(summaryData as Summary);
     } catch (error) {
       console.error("Error loading pipeline:", error);
-      setStatusMessage("Failed to load deal pipeline");
+      setStatusMessage(error instanceof Error ? error.message : "Failed to load deal pipeline");
     } finally {
       setLoading(false);
     }
@@ -178,9 +221,10 @@ export function DealPipelineKanban({
         body: JSON.stringify({ stage: newStage }),
       });
 
+      const payload = await parseJsonSafely(response);
+
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to update deal stage");
+        throw new Error((payload as { error?: string }).error || "Failed to update deal stage");
       }
 
       // Update local state
@@ -202,8 +246,10 @@ export function DealPipelineKanban({
       // Reload summary
       const summaryRes = await fetch(`/api/deals/summary?agencyApiKey=${agencyApiKey}`);
       if (summaryRes.ok) {
-        const summaryData = await summaryRes.json();
-        setSummary(summaryData);
+        const summaryData = await parseJsonSafely<Summary>(summaryRes);
+        if (!("error" in summaryData)) {
+          setSummary(summaryData);
+        }
       }
     } catch (error) {
       console.error("Error updating deal stage:", error);
@@ -216,50 +262,53 @@ export function DealPipelineKanban({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-10 shadow-sm">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-slate-700" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
+    <section className="min-w-0 rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-5 shadow-sm md:p-6">
       {statusMessage && (
-        <div className="mb-4 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           {statusMessage}
         </div>
       )}
 
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">
+      <div className="mb-5 flex flex-col gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 md:text-3xl">
           Deal Pipeline
         </h1>
+        <p className="text-sm text-slate-500">
+          Move deals between stages to track progress and revenue.
+        </p>
 
         {/* Summary Metrics */}
         {summary && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white p-4 rounded-lg border border-gray-200">
-              <p className="text-sm text-gray-600 mb-1">Total Deals</p>
-              <p className="text-2xl font-bold text-gray-900">
+          <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="mb-1 text-xs uppercase tracking-wide text-slate-500">Total Deals</p>
+              <p className="text-2xl font-bold text-slate-900">
                 {summary.total_deals}
               </p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-gray-200">
-              <p className="text-sm text-gray-600 mb-1">Pipeline Value</p>
-              <p className="text-2xl font-bold text-blue-600">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="mb-1 text-xs uppercase tracking-wide text-slate-500">Pipeline Value</p>
+              <p className="text-2xl font-bold text-indigo-600">
                 {formatCurrency(summary.total_pipeline_value)}
               </p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-gray-200">
-              <p className="text-sm text-gray-600 mb-1">Closed Revenue</p>
-              <p className="text-2xl font-bold text-green-600">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="mb-1 text-xs uppercase tracking-wide text-slate-500">Closed Revenue</p>
+              <p className="text-2xl font-bold text-emerald-600">
                 {formatCurrency(summary.closed_revenue)}
               </p>
             </div>
-            <div className="bg-white p-4 rounded-lg border border-gray-200">
-              <p className="text-sm text-gray-600 mb-1">Conversion Rate</p>
-              <p className="text-2xl font-bold text-purple-600">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="mb-1 text-xs uppercase tracking-wide text-slate-500">Conversion Rate</p>
+              <p className="text-2xl font-bold text-fuchsia-600">
                 {summary.conversion_rate}%
               </p>
             </div>
@@ -268,11 +317,11 @@ export function DealPipelineKanban({
       </div>
 
       {/* Kanban Board */}
-      <div className="grid grid-cols-1 lg:grid-cols-7 gap-4 overflow-x-auto pb-4">
+      <div className="flex max-w-full gap-4 overflow-x-auto pb-2">
         {STAGES.map((stage) => (
           <div
             key={stage}
-            className={`flex flex-col bg-white rounded-lg border-2 ${STAGE_COLORS[stage]} p-4 min-w-[18rem] md:min-w-[20rem]`}
+            className={`flex min-h-[18rem] min-w-[17.5rem] flex-shrink-0 flex-col rounded-xl border-2 bg-white p-4 ${STAGE_COLORS[stage]}`}
             onDragOver={handleDragOver}
             onDrop={(e) => handleDrop(e, stage)}
           >
@@ -288,7 +337,7 @@ export function DealPipelineKanban({
             </div>
 
             {/* Cards Container */}
-            <div className="space-y-3 flex-1">
+            <div className="flex-1 space-y-3">
               {(pipeline[stage] || []).map((deal) => (
                 <DealCard
                   key={deal.id}
@@ -299,14 +348,14 @@ export function DealPipelineKanban({
               ))}
               {(pipeline[stage] || []).length === 0 && (
                 <div className="text-center py-8 text-gray-400">
-                  <p className="text-sm">No deals</p>
+                  <p className="text-sm">Empty</p>
                 </div>
               )}
             </div>
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 

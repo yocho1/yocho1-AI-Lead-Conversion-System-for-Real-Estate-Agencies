@@ -30,7 +30,7 @@ export async function GET(request: Request) {
         .from("deals")
         .select("id, stage, deal_value")
         .eq("agency_id", agencyContext.agencyId)
-        .execute();
+        ;
 
       if (result.error) throw result.error;
 
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
         )
         .eq("agency_id", agencyContext.agencyId)
         .order("updated_at", { ascending: false })
-        .execute();
+        ;
 
       if (result.error) throw result.error;
 
@@ -146,7 +146,7 @@ export async function GET(request: Request) {
       )
       .eq("agency_id", agencyContext.agencyId)
       .order("updated_at", { ascending: false })
-      .execute();
+      ;
 
     if (result.error) throw result.error;
 
@@ -181,7 +181,7 @@ export async function POST(request: Request) {
       .eq("id", validatedData.lead_id)
       .eq("agency_id", agencyContext.agencyId)
       .single()
-      .execute();
+      ;
 
     if (leadResult.error || !leadResult.data) {
       return NextResponse.json(
@@ -196,7 +196,7 @@ export async function POST(request: Request) {
       .select("id")
       .eq("lead_id", validatedData.lead_id)
       .single()
-      .execute();
+      ;
 
     if (existingDeal.data) {
       return NextResponse.json(
@@ -222,7 +222,7 @@ export async function POST(request: Request) {
       .insert(dealData)
       .select()
       .single()
-      .execute();
+      ;
 
     if (insertResult.error) throw insertResult.error;
 
@@ -231,13 +231,13 @@ export async function POST(request: Request) {
       .from("leads")
       .update({ deal_id: insertResult.data.id })
       .eq("id", validatedData.lead_id)
-      .execute();
+      ;
 
     return NextResponse.json(insertResult.data, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Validation failed", details: error.errors },
+        { error: "Validation failed", details: error.issues },
         { status: 400 }
       );
     }
@@ -249,3 +249,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

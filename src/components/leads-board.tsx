@@ -793,9 +793,9 @@ export function LeadsBoard({ agencyApiKey, demoMode = false }: Readonly<{ agency
                 <span className="font-medium text-[var(--text)]">{getDisplayLeadName(selectedLead)}</span>
               </div>
             )}
-            {messages.map((message) => (
+            {messages.map((message, index) => (
               <div
-                key={message.id}
+                key={`${message.id}-${message.timestamp}-${index}`}
                 className="max-w-[88%] rounded-xl border border-[var(--border)] px-3 py-2 shadow-[0_8px_18px_rgba(2,8,23,0.12)]"
                 style={{
                   color: messageTextColor(message.sender),

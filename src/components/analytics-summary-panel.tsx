@@ -37,13 +37,20 @@ function isNoisyFailedFetch(reason: unknown) {
   const lowerStack = stack.toLowerCase();
 
   const isNetworkFetchFailure = lowerMessage.includes("failed to fetch") || lowerMessage.includes("err_internet_disconnected");
+  const isDisconnectedCode = lowerMessage.includes("err_internet_disconnected");
   const isExtensionOrigin =
     lowerStack.includes("chrome-extension://") ||
     lowerStack.includes("frame_ant.js") ||
     lowerMessage.includes("chrome-extension://") ||
     lowerMessage.includes("frame_ant.js");
+  const isNextDevtoolsNoise =
+    lowerStack.includes("next-devtools") ||
+    lowerMessage.includes("__nextjs_original-stack-frames");
 
-  return isNetworkFetchFailure && (isExtensionOrigin || (typeof navigator !== "undefined" && !navigator.onLine));
+  return (
+    isNetworkFetchFailure &&
+    (isExtensionOrigin || isNextDevtoolsNoise || isDisconnectedCode || (typeof navigator !== "undefined" && !navigator.onLine))
+  );
 }
 
 async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {

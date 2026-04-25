@@ -90,34 +90,50 @@ export function AnalyticsCard({ agencyApiKey, demoMode = false, onLeadsLoaded }:
     const fetchSeries = async () => {
       setLoading(true);
 
-      const [seriesRes, leadsRes] = await Promise.all([
-        fetch(`/api/analytics/leads-per-day?agencyApiKey=${agencyApiKey}`),
-        fetch(`/api/leads?agencyApiKey=${agencyApiKey}&demo=${demoMode ? "true" : "false"}`),
-      ]);
+      try {
+        const [seriesRes, leadsRes] = await Promise.all([
+          fetch(`/api/analytics/leads-per-day?agencyApiKey=${agencyApiKey}`),
+          fetch(`/api/leads?agencyApiKey=${agencyApiKey}&demo=${demoMode ? "true" : "false"}`),
+        ]);
 
-      const seriesData = await seriesRes.json();
-      const leadsData = await leadsRes.json();
-      const leads = (leadsData.leads || []) as AnalyticsLead[];
+        if (!seriesRes.ok || !leadsRes.ok) {
+          throw new Error("Unable to load analytics data");
+        }
 
-      const totalLeads = leads.length;
-      const hotLeads = leads.filter((lead) => lead.status === "hot").length;
-      const bookedVisits = leads.filter((lead) => lead.appointment_status === "reserved").length;
-      const conversionRate = totalLeads > 0 ? Number(((bookedVisits / totalLeads) * 100).toFixed(1)) : 0;
-      const pipelineValue = leads.reduce((sum, lead) => sum + Math.max(lead.budget_value || 0, 0), 0);
-      const calibrated = shouldUseCalibratedMetrics(totalLeads, hotLeads, bookedVisits, demoMode);
+        const seriesData = await seriesRes.json();
+        const leadsData = await leadsRes.json();
+        const leads = (leadsData.leads || []) as AnalyticsLead[];
 
-      onLeadsLoaded?.(leads);
-      const latestTs = leads[0]?.last_message_at;
-      if (latestTs) {
-        const mins = Math.max(1, Math.floor((Date.now() - new Date(latestTs).getTime()) / 60000));
-        setLastLeadAge(mins > 30 ? "2 min ago" : `${mins} min ago`);
-      } else {
-        setLastLeadAge("2 min ago");
+        const totalLeads = leads.length;
+        const hotLeads = leads.filter((lead) => lead.status === "hot").length;
+        const bookedVisits = leads.filter((lead) => lead.appointment_status === "reserved").length;
+        const conversionRate = totalLeads > 0 ? Number(((bookedVisits / totalLeads) * 100).toFixed(1)) : 0;
+        const pipelineValue = leads.reduce((sum, lead) => sum + Math.max(lead.budget_value || 0, 0), 0);
+        const calibrated = shouldUseCalibratedMetrics(totalLeads, hotLeads, bookedVisits, demoMode);
+
+        onLeadsLoaded?.(leads);
+        const latestTs = leads[0]?.last_message_at;
+        if (latestTs) {
+          const mins = Math.max(1, Math.floor((Date.now() - new Date(latestTs).getTime()) / 60000));
+          setLastLeadAge(mins > 30 ? "2 min ago" : `${mins} min ago`);
+        } else {
+          setLastLeadAge("2 min ago");
+        }
+
+        setSeries(seriesData.series || []);
+        setMetrics(calibrated ? CALIBRATED_METRICS : { totalLeads, hotLeads, bookedVisits, conversionRate, pipelineValue });
+      } catch {
+        setSeries([]);
+        setMetrics({
+          totalLeads: 0,
+          hotLeads: 0,
+          bookedVisits: 0,
+          conversionRate: 0,
+          pipelineValue: 0,
+        });
+      } finally {
+        setLoading(false);
       }
-
-      setSeries(seriesData.series || []);
-      setMetrics(calibrated ? CALIBRATED_METRICS : { totalLeads, hotLeads, bookedVisits, conversionRate, pipelineValue });
-      setLoading(false);
     };
 
     void fetchSeries();

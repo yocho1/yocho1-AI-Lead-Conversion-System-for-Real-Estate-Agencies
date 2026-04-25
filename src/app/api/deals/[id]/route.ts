@@ -5,10 +5,10 @@ import { z } from "zod";
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   NEW_LEAD: ["QUALIFIED", "LOST"],
-  QUALIFIED: ["VISIT_SCHEDULED", "NEGOTIATION", "LOST"],
-  VISIT_SCHEDULED: ["NEGOTIATION", "LOST"],
-  NEGOTIATION: ["OFFER_MADE", "LOST"],
-  OFFER_MADE: ["CLOSED", "NEGOTIATION", "LOST"],
+  QUALIFIED: ["NEW_LEAD", "VISIT_SCHEDULED", "NEGOTIATION", "LOST"],
+  VISIT_SCHEDULED: ["NEW_LEAD", "NEGOTIATION", "LOST"],
+  NEGOTIATION: ["NEW_LEAD", "OFFER_MADE", "LOST"],
+  OFFER_MADE: ["NEW_LEAD", "CLOSED", "NEGOTIATION", "LOST"],
   CLOSED: ["LOST"],
   LOST: ["NEW_LEAD"],
 };
@@ -25,9 +25,15 @@ const TransitionStageSchema = z.object({
   ]),
 });
 
+async function resolveDealId(params: { id?: string } | Promise<{ id?: string }>) {
+  const resolved = await Promise.resolve(params);
+  const id = resolved?.id;
+  return typeof id === "string" ? id : "";
+}
+
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { id?: string } | Promise<{ id?: string }> }
 ) {
   const supabase = getServerSupabase();
   const agencyContext = await requireAgencyContext(request, supabase);
@@ -37,6 +43,11 @@ export async function PATCH(
   }
 
   try {
+    const dealId = await resolveDealId(params);
+    if (!dealId) {
+      return NextResponse.json({ error: "Deal id is required" }, { status: 400 });
+    }
+
     const body = await request.json();
     const validatedData = TransitionStageSchema.parse(body);
 
@@ -44,9 +55,9 @@ export async function PATCH(
     const dealResult = await supabase
       .from("deals")
       .select("id, stage, agency_id")
-      .eq("id", params.id)
+      .eq("id", dealId)
       .single()
-      .execute();
+      ;
 
     if (dealResult.error || !dealResult.data) {
       return NextResponse.json(
@@ -65,6 +76,15 @@ export async function PATCH(
 
     const currentStage = dealResult.data.stage;
     const newStage = validatedData.stage;
+
+    // Idempotent no-op: duplicate drop events can request the same target stage twice.
+    if (currentStage === newStage) {
+      return NextResponse.json({
+        id: dealId,
+        stage: currentStage,
+        unchanged: true,
+      });
+    }
 
     // Validate transition
     if (!VALID_TRANSITIONS[currentStage]?.includes(newStage)) {
@@ -85,16 +105,16 @@ export async function PATCH(
         stage: newStage,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", params.id)
+      .eq("id", dealId)
       .select()
       .single()
-      .execute();
+      ;
 
     if (updateResult.error) throw updateResult.error;
 
     // Log stage transition
     const eventData = {
-      deal_id: params.id,
+      deal_id: dealId,
       from_stage: currentStage,
       to_stage: newStage,
       changed_at: new Date().toISOString(),
@@ -104,13 +124,13 @@ export async function PATCH(
     await supabase
       .from("deal_events")
       .insert(eventData)
-      .execute();
+      ;
 
     return NextResponse.json(updateResult.data);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: "Validation failed", details: error.errors },
+        { error: "Validation failed", details: error.issues },
         { status: 400 }
       );
     }
@@ -125,7 +145,7 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { id?: string } | Promise<{ id?: string }> }
 ) {
   const supabase = getServerSupabase();
   const agencyContext = await requireAgencyContext(request, supabase);
@@ -135,13 +155,18 @@ export async function DELETE(
   }
 
   try {
+    const dealId = await resolveDealId(params);
+    if (!dealId) {
+      return NextResponse.json({ error: "Deal id is required" }, { status: 400 });
+    }
+
     // Verify deal exists and belongs to agency
     const dealResult = await supabase
       .from("deals")
       .select("id, agency_id")
-      .eq("id", params.id)
+      .eq("id", dealId)
       .single()
-      .execute();
+      ;
 
     if (dealResult.error || !dealResult.data) {
       return NextResponse.json(
@@ -161,8 +186,8 @@ export async function DELETE(
     const deleteResult = await supabase
       .from("deals")
       .delete()
-      .eq("id", params.id)
-      .execute();
+      .eq("id", dealId)
+      ;
 
     if (deleteResult.error) throw deleteResult.error;
 
@@ -170,8 +195,8 @@ export async function DELETE(
     await supabase
       .from("leads")
       .update({ deal_id: null })
-      .eq("deal_id", params.id)
-      .execute();
+      .eq("deal_id", dealId)
+      ;
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -182,3 +207,4 @@ export async function DELETE(
     );
   }
 }
+

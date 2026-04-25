@@ -134,12 +134,14 @@ export function ChatWidget({ agencyApiKey, demoMode = false, source, campaignId 
       }
 
       streamAssistant(data.assistantMessage);
-    } catch {
+    } catch (error) {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "I ran into an issue. Please try again in a few seconds.",
+          content: error instanceof Error && error.message
+            ? error.message
+            : "I ran into an issue. Please try again in a few seconds.",
         },
       ]);
     } finally {

@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { requireAgencyContext } from "@/lib/agency-context";
 import { getServerSupabase } from "@/lib/supabase";
 
+function isMissingColumnError(errorMessage: string | undefined, columnName: string) {
+  if (!errorMessage) return false;
+  const normalized = errorMessage.toLowerCase();
+  return normalized.includes(columnName.toLowerCase()) && (normalized.includes("schema cache") || normalized.includes("does not exist"));
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const demoMode = searchParams.get("demo") === "true";
@@ -12,11 +18,26 @@ export async function GET(request: Request) {
     return agencyContext;
   }
 
-  const { data: leads, error } = await supabase
+  let { data: leads, error } = await supabase
     .from("leads")
     .select("id, source, campaign_id, name, email, phone, budget, budget_value, currency, location, location_city, location_country, property_type, buying_timeline, timeline_normalized, appointment_status, status, hot_alert_sent, chat_locked, last_message_at, created_at")
     .eq("agency_id", agencyContext.agencyId)
     .order("last_message_at", { ascending: false });
+
+  if (error && (isMissingColumnError(error.message, "source") || isMissingColumnError(error.message, "campaign_id"))) {
+    const fallbackResult = await supabase
+      .from("leads")
+      .select("id, name, email, phone, budget, budget_value, currency, location, location_city, location_country, property_type, buying_timeline, timeline_normalized, appointment_status, status, hot_alert_sent, chat_locked, last_message_at, created_at")
+      .eq("agency_id", agencyContext.agencyId)
+      .order("last_message_at", { ascending: false });
+
+    error = fallbackResult.error;
+    leads = (fallbackResult.data || []).map((lead) => ({
+      ...lead,
+      source: null,
+      campaign_id: null,
+    }));
+  }
 
   if (error) {
     return NextResponse.json({ error: "Unable to load leads" }, { status: 500 });
