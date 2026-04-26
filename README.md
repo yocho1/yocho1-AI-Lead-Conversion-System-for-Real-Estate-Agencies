@@ -1,100 +1,124 @@
 # AI Lead Conversion System for Real Estate Agencies
 
-A production-oriented, multi-tenant lead conversion platform for real estate teams.
+Production-grade, multi-tenant conversion platform for real estate teams.
 
-It combines:
+This repository provides a complete lead-to-deal operating system:
 
-- a Next.js SaaS frontend
-- tenant-scoped API routes
-- Supabase persistence and analytics
-- AI-powered qualification and follow-up flows
-- an optional event-driven FastAPI + Redis worker backend for asynchronous delivery
+- conversational lead capture
+- AI-assisted qualification
+- deal pipeline orchestration
+- analytics and conversion visibility
+- optional async event delivery backend
 
-## Executive Summary
+## Why This Exists
 
-This repository implements a full lead lifecycle:
+Real estate agencies typically lose revenue between first contact and appointment confirmation because lead qualification, follow-up, and pipeline hygiene are fragmented.
 
-1. Capture inbound conversations and normalize lead context.
-2. Qualify leads into actionable statuses.
-3. Auto-create and maintain deal pipeline records.
-4. Drive sales workflows from a multi-page dashboard.
-5. Trigger automated follow-up and channel delivery actions.
+This platform centralizes those workflows into one SaaS-style workspace with tenant isolation and API-first operations.
 
-The system is designed for agency isolation, operational visibility, and incremental hardening from MVP to production.
+## Product Capabilities
 
-## Core Capabilities
+- Multi-page CRM workspace with sidebar navigation
+- Lead ingestion and deduplication by tenant
+- Conversation history and qualification tracking
+- Deal pipeline with server-side stage validation
+- Idempotent drag-drop updates for robust UX behavior
+- Auto-seeding of missing deals from existing leads
+- Funnel and trend analytics endpoints
+- Booking and automation surfaces
+- Optional FastAPI + Redis worker for asynchronous channel delivery
 
-- Multi-page SaaS workspace with grouped sidebar navigation
-- Tenant isolation by agency API key
-- Lead ingestion, deduplication, and message history tracking
-- Deal pipeline with stage transitions and summary metrics
-- Automatic deal seeding for existing leads
-- Analytics endpoints for funnel and trend reporting
-- Booking and automation endpoints
-- Optional asynchronous event delivery stack (FastAPI + Redis worker)
+## Technical Stack
 
-## Tech Stack
-
-- Frontend and API: Next.js 16 (App Router), React 19, TypeScript, Tailwind 4
+- Frontend/API: Next.js 16, React 19, TypeScript
+- UI: Tailwind CSS 4, Lucide icons
 - Validation: Zod
-- Database: Supabase (PostgreSQL)
-- AI layer: OpenRouter-compatible model integration
-- Optional async backend: FastAPI, Redis, Python worker
-- Testing: Vitest (frontend), Pytest (backend)
+- Data: Supabase PostgreSQL
+- AI integration: OpenRouter-compatible provider flow
+- Optional backend runtime: FastAPI, Redis, Python worker
+- Tests: Vitest, Pytest
 
-## Architecture at a Glance
+## Architecture
 
-### Frontend + API Layer (Next.js)
+### Web Application Layer
 
-- App Router with route grouping under the workspace layout
-- Shared layout and sidebar for CRM-style navigation
-- API routes for chat, leads, deals, analytics, automations, bookings, and health
+The app is built with App Router and a shared workspace layout in `src/app/(app)`.
+
+Core pages:
+
+- `/dashboard`
+- `/analytics`
+- `/leads`
+- `/deals`
+- `/properties`
+- `/bookings`
+- `/inbox`
+- `/campaigns`
+- `/automation`
+- `/settings`
+
+### API Layer (Next.js)
+
+Primary domains under `src/app/api`:
+
+- lead and messaging flows
+- deal pipeline and summary
+- analytics reporting
+- booking and automation endpoints
+- agency lifecycle and health checks
 
 ### Data Layer (Supabase)
 
-- Tenant-scoped data model
-- Lead and message storage
-- Deal pipeline and transitions
-- Analytics aggregates and reporting tables
+Multi-tenant design with agency-scoped operations:
 
-### Optional Event-Driven Layer (FastAPI + Redis)
+- agency identity by API key
+- lead and message persistence
+- deal lifecycle tracking
+- analytics aggregation and reporting tables
 
-- FastAPI receives event requests and persists intent
-- Redis queue decouples ingestion from delivery
-- Worker handles retries, channel routing, and dead-lettering
+### Optional Event-Driven Layer
 
-## Current Route Topology
+`backend/` contains a FastAPI service and worker stack for async delivery and retries:
 
-The workspace routes are organized under a single shared application shell:
+- API intake and normalization
+- Redis queue and outbox flow
+- worker processing and retry management
+- provider abstraction (WhatsApp/email/SMS/test)
 
-- Dashboard
-- Analytics
-- Leads
-- Deals
-- Properties
-- Bookings
-- Inbox
-- Campaigns
-- Automation
-- Settings
+## Repository Structure
 
-## Local Setup
+```text
+src/
+  app/
+    (app)/
+    api/
+  components/
+  lib/
 
-### 1) Install Dependencies
+backend/
+  app/
+  worker/
+  scripts/
+
+supabase/
+  migrations/
+
+tests/
+```
+
+## Local Development
+
+### 1. Install Node dependencies
 
 ```bash
 npm install
 ```
 
-### 2) Configure Environment
+### 2. Configure environment
 
-Copy and fill environment values:
+Create `.env.local` from `.env.example` and fill required values.
 
-```bash
-cp .env.example .env.local
-```
-
-Required baseline variables:
+Minimum variables:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
@@ -112,64 +136,64 @@ NEXT_PUBLIC_BACKEND_API_URL=http://127.0.0.1:8000
 FOLLOW_UP_DELAY_MINUTES=20
 ```
 
-### 3) Run Web App
+### 3. Start the app
 
 ```bash
 npm run dev
 ```
 
-### 4) Useful Local URLs
+### 4. Useful URLs
 
-- App home: http://localhost:3000/?agencyKey=demo-agency-key
-- Demo mode: http://localhost:3000/?agencyKey=demo-agency-key&demo=true
-- Dashboard: http://localhost:3000/dashboard?agencyKey=demo-agency-key
+- `http://localhost:3000/?agencyKey=demo-agency-key`
+- `http://localhost:3000/?agencyKey=demo-agency-key&demo=true`
+- `http://localhost:3000/dashboard?agencyKey=demo-agency-key`
 
-## Supabase Bootstrap
+## Database Setup
 
 1. Create a Supabase project.
-2. Run SQL migrations from the migrations folder in chronological order.
-3. Populate required demo and tenant records.
-4. Validate connectivity through the health endpoint.
+2. Apply SQL migrations in `supabase/migrations` (chronological order).
+3. Ensure a valid demo tenant exists (for local demos).
+4. Verify connectivity through health endpoints.
 
-## API Surface (High-Level)
+## Key API Endpoints
 
-### Lead and Chat
+### Conversation and Leads
 
-- POST /api/chat
-- GET /api/leads
-- GET /api/leads/[leadId]/messages
+- `POST /api/chat`
+- `GET /api/leads`
+- `GET /api/leads/[leadId]/messages`
 
 ### Deals and Pipeline
 
-- GET /api/deals
-- PATCH /api/deals/[id]
-- GET /api/deals/pipeline
-- GET /api/deals/summary
+- `GET /api/deals`
+- `PATCH /api/deals/[id]`
+- `GET /api/deals/pipeline`
+- `GET /api/deals/summary`
 
 ### Analytics
 
-- GET /api/analytics/leads-per-day
-- GET /api/analytics/sources
-- GET /api/analytics/summary
+- `GET /api/analytics/leads-per-day`
+- `GET /api/analytics/sources`
+- `GET /api/analytics/summary`
 
 ### Operations
 
-- POST /api/follow-up/run
-- GET /api/health/supabase
-- Agency and key-management endpoints under /api/agencies and /api/agency
+- `POST /api/follow-up/run`
+- `GET /api/health/supabase`
+- agency management routes under `/api/agencies` and `/api/agency`
 
-## Deal Pipeline Behaviors
+## Pipeline Guarantees
 
-The current pipeline implementation includes the following operational guarantees:
+The deal layer is intentionally defensive:
 
-- Missing deal rows for existing leads are auto-created on pipeline and summary reads.
-- Newly seeded or discovered leads enter NEW_LEAD as the initial stage.
-- Stage updates are idempotent for repeated drag-drop requests.
-- Stage transition validation runs server-side.
+- Missing deal rows are auto-created for existing leads.
+- Initial stage defaults to `NEW_LEAD`.
+- Duplicate stage updates are treated idempotently.
+- Stage transition checks are enforced server-side.
 
-## Testing and Quality Gates
+## Quality Gates
 
-### Frontend / TypeScript
+Run before every PR:
 
 ```bash
 npm run lint
@@ -177,24 +201,22 @@ npm run test
 npm run build
 ```
 
-### Backend (optional Python service)
+## Optional Python Backend Runtime
+
+Install backend dependencies:
 
 ```bash
 python -m venv .venv
-. .venv/bin/activate
 pip install -r backend/requirements.txt
-pytest backend/tests
 ```
 
-On Windows PowerShell, activate with:
+Activate virtual environment on Windows PowerShell:
 
 ```powershell
 .venv\Scripts\Activate.ps1
 ```
 
-## Optional FastAPI + Worker Runtime
-
-Run API service:
+Run FastAPI service:
 
 ```bash
 uvicorn backend.app.main:app --reload --port 8000
@@ -212,127 +234,32 @@ Run demo worker queue:
 python -m backend.worker.run_worker --demo
 ```
 
-## Deployment Notes
-
-- Primary deployment target is Vercel for the Next.js application.
-- Ensure all server-only secrets are configured as protected environment variables.
-- Follow-up endpoint can be scheduled via cron.
-- Keep tenant API keys scoped and rotated on a regular policy.
-
-## Security and Operations Guidance
-
-- Never commit real API keys or tenant secrets.
-- Rotate any credential immediately if exposed in logs, screenshots, or config files.
-- Keep service-role keys server-side only.
-- Restrict admin key usage to internal operations.
-
-## Suggested Contribution Workflow
-
-1. Create a feature branch from main.
-2. Implement small, testable increments.
-3. Run lint, tests, and build locally before commit.
-4. Open PR with verification notes and migration impact.
-
-## Status
-
-The multi-page SaaS refactor, deal pipeline hardening, and production build validation are complete on the active feature branch.
-SMS_API_KEY=
-TENANT_PROVIDER_OVERRIDES={"agency-1":{"whatsapp":"test","email":"email"}}
-MAX_NOTIFICATIONS_PER_SECOND=5
-DEFAULT_CURRENCY=USD
-```
-
-### Run
+Replay outbox:
 
 ```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+python backend/scripts/dispatch_outbox.py
 ```
 
-Worker:
+## Deployment
 
-```bash
-cd backend
-.venv\Scripts\activate
-python -m worker.run_worker
-```
+- Primary web deployment target: Vercel
+- Configure all secrets as environment variables in your deployment platform
+- Schedule follow-up automation through a cron trigger
 
-Demo-only worker:
+## Security Notes
 
-```bash
-python -m worker.run_worker --demo
-```
+- Never commit provider keys or tenant secrets.
+- Treat exposed API keys as compromised and rotate immediately.
+- Keep `SUPABASE_SERVICE_ROLE_KEY` server-only.
+- Restrict `ADMIN_API_KEY` to internal operator workflows.
 
-Outbox replay (cron-safe):
+## Contribution Standard
 
-```bash
-python scripts/dispatch_outbox.py
-```
+1. Branch from `main`.
+2. Keep commits focused and reversible.
+3. Pass lint, tests, and build locally.
+4. Include migration and verification notes in PRs.
 
-## Sprint Plan and Git Workflow
+## Current Status
 
-Use this exact sequence and do not start a new sprint until tests pass and code is pushed.
-
-### Sprint 1: Foundation
-
-- Scope:
-  - Next.js + TypeScript + lint/test setup
-  - Supabase schema
-  - environment configuration
-- Validation:
-  - `npm run lint`
-  - `npm run test`
-- Git:
-  - `git add .`
-  - `git commit -m "sprint-1: foundation setup"`
-  - `git push origin main`
-
-### Sprint 2: AI Chat + Lead Qualification
-
-- Scope:
-  - chat widget UI
-  - `/api/chat`
-  - AI assistant persona and qualification logic
-  - appointment suggestion for hot leads
-- Validation:
-  - `npm run lint`
-  - `npm run test`
-  - manual chat flow test in browser
-- Git:
-  - `git add .`
-  - `git commit -m "sprint-2: chat + qualification engine"`
-  - `git push origin main`
-
-### Sprint 3: CRM Dashboard
-
-- Scope:
-  - lead list UI
-  - conversation viewer
-  - settings page
-  - analytics card
-- Validation:
-  - `npm run lint`
-  - `npm run test`
-  - manual dashboard verification
-- Git:
-  - `git add .`
-  - `git commit -m "sprint-3: crm dashboard and analytics"`
-  - `git push origin main`
-
-### Sprint 4: Auto Follow-Up + Production Hardening
-
-- Scope:
-  - `/api/follow-up/run`
-  - deployment checks
-  - README finalization
-- Validation:
-  - `npm run build`
-  - `npm run lint`
-  - `npm run test`
-- Git:
-  - `git add .`
-  - `git commit -m "sprint-4: follow-up automation and production prep"`
-  - `git push origin main`
+The multi-page SaaS refactor and deal pipeline hardening are integrated on `feature/deal-pipeline`, including successful production build validation.
