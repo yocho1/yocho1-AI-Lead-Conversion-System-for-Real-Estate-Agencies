@@ -1,50 +1,50 @@
 # AI Lead Conversion System for Real Estate Agencies
 
-Production-grade, multi-tenant conversion platform for real estate teams.
+Enterprise-ready, multi-tenant lead conversion platform designed for modern real estate operations.
 
-This repository provides a complete lead-to-deal operating system:
+This project combines a SaaS frontend, tenant-scoped APIs, Supabase data services, and optional async worker infrastructure to turn inbound chats into qualified leads, structured deals, and measurable pipeline outcomes.
 
-- conversational lead capture
-- AI-assisted qualification
-- deal pipeline orchestration
-- analytics and conversion visibility
-- optional async event delivery backend
+## What This Platform Delivers
 
-## Why This Exists
+- AI-guided lead capture and qualification
+- robust deal pipeline management
+- role-ready analytics and conversion visibility
+- automated follow-up workflows
+- strict tenant isolation by agency API key
+- optional event-driven backend for high-throughput delivery channels
 
-Real estate agencies typically lose revenue between first contact and appointment confirmation because lead qualification, follow-up, and pipeline hygiene are fragmented.
+## Product Context
 
-This platform centralizes those workflows into one SaaS-style workspace with tenant isolation and API-first operations.
+Most agencies leak value between first touch and appointment booking because lead data, response logic, and pipeline hygiene live in disconnected tools.
 
-## Product Capabilities
+This system centralizes the full lead lifecycle from inbound message to sales action, with operational guarantees at the API and data layers.
+
+## Core Features
 
 - Multi-page CRM workspace with sidebar navigation
-- Lead ingestion and deduplication by tenant
-- Conversation history and qualification tracking
-- Deal pipeline with server-side stage validation
-- Idempotent drag-drop updates for robust UX behavior
-- Auto-seeding of missing deals from existing leads
+- Lead creation, deduplication, and message history
+- Deal pipeline with server-validated transitions
+- Idempotent stage updates to handle duplicate drag-drop actions
+- Automatic deal seeding for existing leads
 - Funnel and trend analytics endpoints
-- Booking and automation surfaces
-- Optional FastAPI + Redis worker for asynchronous channel delivery
+- Booking and automation modules
+- Optional FastAPI + Redis async dispatch architecture
 
-## Technical Stack
+## Technology Stack
 
-- Frontend/API: Next.js 16, React 19, TypeScript
-- UI: Tailwind CSS 4, Lucide icons
+- Web and API: Next.js 16, React 19, TypeScript
+- UI: Tailwind CSS 4, Lucide
 - Validation: Zod
 - Data: Supabase PostgreSQL
-- AI integration: OpenRouter-compatible provider flow
-- Optional backend runtime: FastAPI, Redis, Python worker
-- Tests: Vitest, Pytest
+- AI: OpenRouter-compatible model integration
+- Optional async runtime: FastAPI, Redis, Python worker
+- Tests: Vitest and Pytest
 
-## Architecture
+## Architecture Overview
 
-### Web Application Layer
+### 1. Web Workspace Layer
 
-The app is built with App Router and a shared workspace layout in `src/app/(app)`.
-
-Core pages:
+App Router with shared shell layout and route grouping under `src/app/(app)`:
 
 - `/dashboard`
 - `/analytics`
@@ -57,35 +57,35 @@ Core pages:
 - `/automation`
 - `/settings`
 
-### API Layer (Next.js)
+### 2. Next.js API Layer
 
-Primary domains under `src/app/api`:
+Domain APIs cover:
 
-- lead and messaging flows
-- deal pipeline and summary
-- analytics reporting
-- booking and automation endpoints
-- agency lifecycle and health checks
+- chat and lead qualification
+- lead/message retrieval
+- deals, pipeline, and summaries
+- analytics and booking flows
+- agency management and health checks
 
-### Data Layer (Supabase)
+### 3. Data and Tenancy Layer
 
-Multi-tenant design with agency-scoped operations:
+Supabase stores tenant-scoped entities for:
 
-- agency identity by API key
-- lead and message persistence
-- deal lifecycle tracking
-- analytics aggregation and reporting tables
+- agencies and API keys
+- leads and conversations
+- deals and stage history
+- analytics aggregates
 
-### Optional Event-Driven Layer
+### 4. Optional Async Delivery Layer
 
-`backend/` contains a FastAPI service and worker stack for async delivery and retries:
+The `backend` service provides asynchronous event processing:
 
-- API intake and normalization
-- Redis queue and outbox flow
-- worker processing and retry management
-- provider abstraction (WhatsApp/email/SMS/test)
+- FastAPI ingest and normalization
+- Redis queue + outbox pattern
+- retry-aware worker processor
+- provider abstraction for WhatsApp/email/SMS/test routing
 
-## Repository Structure
+## Repository Layout
 
 ```text
 src/
@@ -106,19 +106,19 @@ supabase/
 tests/
 ```
 
-## Local Development
+## Quick Start
 
-### 1. Install Node dependencies
+### 1) Install dependencies
 
 ```bash
 npm install
 ```
 
-### 2. Configure environment
+### 2) Configure environment
 
-Create `.env.local` from `.env.example` and fill required values.
+Create `.env.local` from `.env.example`.
 
-Minimum variables:
+Required baseline variables:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
@@ -136,26 +136,26 @@ NEXT_PUBLIC_BACKEND_API_URL=http://127.0.0.1:8000
 FOLLOW_UP_DELAY_MINUTES=20
 ```
 
-### 3. Start the app
+### 3) Start the application
 
 ```bash
 npm run dev
 ```
 
-### 4. Useful URLs
+### 4) Local URLs
 
 - `http://localhost:3000/?agencyKey=demo-agency-key`
 - `http://localhost:3000/?agencyKey=demo-agency-key&demo=true`
 - `http://localhost:3000/dashboard?agencyKey=demo-agency-key`
 
-## Database Setup
+## Database Bootstrap
 
 1. Create a Supabase project.
-2. Apply SQL migrations in `supabase/migrations` (chronological order).
-3. Ensure a valid demo tenant exists (for local demos).
-4. Verify connectivity through health endpoints.
+2. Run SQL migrations from `supabase/migrations` in chronological order.
+3. Ensure a demo tenant exists for local validation.
+4. Validate service connectivity via health endpoints.
 
-## Key API Endpoints
+## High-Value API Surface
 
 ### Conversation and Leads
 
@@ -180,20 +180,36 @@ npm run dev
 
 - `POST /api/follow-up/run`
 - `GET /api/health/supabase`
-- agency management routes under `/api/agencies` and `/api/agency`
+- agency lifecycle endpoints under `/api/agencies` and `/api/agency`
 
-## Pipeline Guarantees
+## Example Calls
 
-The deal layer is intentionally defensive:
+### Send a chat message
 
-- Missing deal rows are auto-created for existing leads.
-- Initial stage defaults to `NEW_LEAD`.
-- Duplicate stage updates are treated idempotently.
-- Stage transition checks are enforced server-side.
+```bash
+curl -X POST http://localhost:3000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"agencyApiKey":"demo-agency-key","message":"I need a 3-bedroom apartment in Casablanca around 1.8M MAD"}'
+```
 
-## Quality Gates
+### Read pipeline snapshot
 
-Run before every PR:
+```bash
+curl "http://localhost:3000/api/deals/pipeline?agencyApiKey=demo-agency-key"
+```
+
+## Operational Guarantees
+
+The deal pipeline implementation enforces the following:
+
+- missing deal rows are auto-created when pipeline/summary is requested
+- all newly seeded leads enter `NEW_LEAD`
+- repeated stage updates are handled idempotently
+- invalid stage transitions are rejected server-side
+
+## Quality and Release Gates
+
+Run before every push:
 
 ```bash
 npm run lint
@@ -203,14 +219,14 @@ npm run build
 
 ## Optional Python Backend Runtime
 
-Install backend dependencies:
+Install dependencies:
 
 ```bash
 python -m venv .venv
 pip install -r backend/requirements.txt
 ```
 
-Activate virtual environment on Windows PowerShell:
+Activate on PowerShell:
 
 ```powershell
 .venv\Scripts\Activate.ps1
@@ -228,38 +244,39 @@ Run worker:
 python -m backend.worker.run_worker
 ```
 
-Run demo worker queue:
+Run demo queue:
 
 ```bash
 python -m backend.worker.run_worker --demo
 ```
 
-Replay outbox:
+Replay outbox jobs:
 
 ```bash
 python backend/scripts/dispatch_outbox.py
 ```
 
-## Deployment
+## Deployment Guidance
 
-- Primary web deployment target: Vercel
-- Configure all secrets as environment variables in your deployment platform
-- Schedule follow-up automation through a cron trigger
+- Primary target: Vercel for web/API layer
+- Keep secrets in deployment environment settings
+- Schedule follow-up endpoint with cron if desired
+- Validate migration state before release promotion
 
-## Security Notes
+## Security Requirements
 
-- Never commit provider keys or tenant secrets.
-- Treat exposed API keys as compromised and rotate immediately.
-- Keep `SUPABASE_SERVICE_ROLE_KEY` server-only.
-- Restrict `ADMIN_API_KEY` to internal operator workflows.
+- never commit provider keys, tenant keys, or service-role secrets
+- rotate any exposed key immediately
+- keep `SUPABASE_SERVICE_ROLE_KEY` server-only
+- scope `ADMIN_API_KEY` to trusted operators
 
-## Contribution Standard
+## Team Workflow
 
 1. Branch from `main`.
-2. Keep commits focused and reversible.
-3. Pass lint, tests, and build locally.
-4. Include migration and verification notes in PRs.
+2. Keep commits atomic and reviewable.
+3. Pass lint/tests/build locally.
+4. Include migration and verification notes in the PR.
 
-## Current Status
+## Current Branch Status
 
-The multi-page SaaS refactor and deal pipeline hardening are integrated on `feature/deal-pipeline`, including successful production build validation.
+The `feature/deal-pipeline` branch includes the multi-page SaaS refactor, hardened deal pipeline flows, and successful production build validation.
