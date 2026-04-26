@@ -1,81 +1,100 @@
 # AI Lead Conversion System for Real Estate Agencies
 
-Production-ready MVP built with Next.js, Supabase, and OpenRouter to help real estate agencies capture, qualify, and convert leads.
+A production-oriented, multi-tenant lead conversion platform for real estate teams.
 
-## Features
+It combines:
 
-- Floating chat widget (Intercom-style)
-- AI real estate sales assistant persona (conversion-focused)
-- Mandatory lead capture gate (name + phone/email)
-- Lead deduplication by email/phone per agency
-- Structured lead qualification (hot, warm, cold)
-- Sales-driven closing mode once budget/location/timeline are captured
-- Step-by-step appointment booking flow (day -> morning/afternoon -> reservation)
-- Multi-tenant agency isolation by API key
-- CRM dashboard with:
-  - lead list
-  - qualification status
-  - conversation history
-  - leads per day analytics
-  - business intelligence layer (funnel + conversion + response-time)
-- hot/new visual highlighting
-- Auto follow-up endpoint for inactive leads
-- Hot lead alert system (Resend email)
-- Demo mode (`?demo=true`) with preloaded hot-lead flow
-- Vercel-ready Next.js project structure
+- a Next.js SaaS frontend
+- tenant-scoped API routes
+- Supabase persistence and analytics
+- AI-powered qualification and follow-up flows
+- an optional event-driven FastAPI + Redis worker backend for asynchronous delivery
+
+## Executive Summary
+
+This repository implements a full lead lifecycle:
+
+1. Capture inbound conversations and normalize lead context.
+2. Qualify leads into actionable statuses.
+3. Auto-create and maintain deal pipeline records.
+4. Drive sales workflows from a multi-page dashboard.
+5. Trigger automated follow-up and channel delivery actions.
+
+The system is designed for agency isolation, operational visibility, and incremental hardening from MVP to production.
+
+## Core Capabilities
+
+- Multi-page SaaS workspace with grouped sidebar navigation
+- Tenant isolation by agency API key
+- Lead ingestion, deduplication, and message history tracking
+- Deal pipeline with stage transitions and summary metrics
+- Automatic deal seeding for existing leads
+- Analytics endpoints for funnel and trend reporting
+- Booking and automation endpoints
+- Optional asynchronous event delivery stack (FastAPI + Redis worker)
 
 ## Tech Stack
 
-- Frontend: Next.js (App Router) + React + TypeScript
-- Backend: Next.js API routes
+- Frontend and API: Next.js 16 (App Router), React 19, TypeScript, Tailwind 4
+- Validation: Zod
 - Database: Supabase (PostgreSQL)
-- AI: OpenRouter (`openai/gpt-4o-mini` by default, configurable in env)
-- Deployment: Vercel
+- AI layer: OpenRouter-compatible model integration
+- Optional async backend: FastAPI, Redis, Python worker
+- Testing: Vitest (frontend), Pytest (backend)
 
-## Project Structure
+## Architecture at a Glance
 
-```txt
-src/
-	app/
-		api/
-			analytics/leads-per-day/route.ts
-      analytics/summary/route.ts
-			chat/route.ts
-			follow-up/run/route.ts
-			leads/route.ts
-			leads/[leadId]/messages/route.ts
-		dashboard/
-			page.tsx
-			settings/page.tsx
-		globals.css
-		layout.tsx
-		page.tsx
-	components/
-		analytics-card.tsx
-    analytics-summary-panel.tsx
-		chat-widget.tsx
-		dashboard-shell.tsx
-		leads-board.tsx
-	lib/
-    analytics.ts
-		ai.ts
-		calendar.ts
-		env.ts
-		lead-parser.ts
-		qualification.ts
-		supabase.ts
-		types.ts
-supabase/
-	schema.sql
-  seeds/
-    analytics_sample_data.sql
-tests/
-	qualification.test.ts
+### Frontend + API Layer (Next.js)
+
+- App Router with route grouping under the workspace layout
+- Shared layout and sidebar for CRM-style navigation
+- API routes for chat, leads, deals, analytics, automations, bookings, and health
+
+### Data Layer (Supabase)
+
+- Tenant-scoped data model
+- Lead and message storage
+- Deal pipeline and transitions
+- Analytics aggregates and reporting tables
+
+### Optional Event-Driven Layer (FastAPI + Redis)
+
+- FastAPI receives event requests and persists intent
+- Redis queue decouples ingestion from delivery
+- Worker handles retries, channel routing, and dead-lettering
+
+## Current Route Topology
+
+The workspace routes are organized under a single shared application shell:
+
+- Dashboard
+- Analytics
+- Leads
+- Deals
+- Properties
+- Bookings
+- Inbox
+- Campaigns
+- Automation
+- Settings
+
+## Local Setup
+
+### 1) Install Dependencies
+
+```bash
+npm install
 ```
 
-## Environment Variables
+### 2) Configure Environment
 
-Copy `.env.example` to `.env.local` and fill values:
+Copy and fill environment values:
+
+```bash
+cp .env.example .env.local
+```
+
+Required baseline variables:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
@@ -93,211 +112,130 @@ NEXT_PUBLIC_BACKEND_API_URL=http://127.0.0.1:8000
 FOLLOW_UP_DELAY_MINUTES=20
 ```
 
-## Supabase Setup
-
-1. Create a Supabase project.
-2. Open SQL editor and run [supabase/schema.sql](supabase/schema.sql).
-3. In Settings -> API, copy:
-
-- Project URL -> `NEXT_PUBLIC_SUPABASE_URL`
-- Publishable key -> `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-- service_role secret -> `SUPABASE_SERVICE_ROLE_KEY` (server-side only)
-
-4. Confirm a demo agency exists with API key `demo-agency-key`.
-5. Verify integration with `GET /api/health/supabase` and expect `{ "ok": true, ... }`.
-
-## Local Development
+### 3) Run Web App
 
 ```bash
-npm install
 npm run dev
 ```
 
-Open:
+### 4) Useful Local URLs
 
-- App: `http://localhost:3000/?agencyKey=demo-agency-key`
-- Demo mode: `http://localhost:3000/?agencyKey=demo-agency-key&demo=true`
-- Dashboard: `http://localhost:3000/dashboard?agencyKey=demo-agency-key`
+- App home: http://localhost:3000/?agencyKey=demo-agency-key
+- Demo mode: http://localhost:3000/?agencyKey=demo-agency-key&demo=true
+- Dashboard: http://localhost:3000/dashboard?agencyKey=demo-agency-key
 
-## API Endpoints
+## Supabase Bootstrap
 
-- `POST /api/chat`
-  - Body: `{ agencyApiKey, leadId?, message }`
-  - Persists message, updates lead qualification, returns assistant reply
+1. Create a Supabase project.
+2. Run SQL migrations from the migrations folder in chronological order.
+3. Populate required demo and tenant records.
+4. Validate connectivity through the health endpoint.
 
-- `GET /api/leads?agencyApiKey=...`
-  - Returns agency leads
+## API Surface (High-Level)
 
-- `GET /api/leads/:leadId/messages?agencyApiKey=...`
-  - Returns conversation history
+### Lead and Chat
 
-- `POST /api/follow-up/run`
-  - Requires `agencyApiKey` via query string or `x-agency-key` header
-  - Sends follow-up to leads inactive for `FOLLOW_UP_DELAY_MINUTES`
-  - Intended for cron job usage
+- POST /api/chat
+- GET /api/leads
+- GET /api/leads/[leadId]/messages
 
-- `POST /api/agencies`
-  - Admin only (`x-admin-key` when `ADMIN_API_KEY` is set)
-  - Body: `{ name, primaryColor?, logoUrl? }`
-  - Creates tenant agency and returns API key
+### Deals and Pipeline
 
-- `POST /api/agencies/:agencyId/api-keys`
-  - Admin only (`x-admin-key`)
-  - Rotates tenant API key
+- GET /api/deals
+- PATCH /api/deals/[id]
+- GET /api/deals/pipeline
+- GET /api/deals/summary
 
-- `GET /api/analytics/leads-per-day?agencyApiKey=...`
-  - Returns simple daily lead counts
+### Analytics
 
-- `GET /api/analytics/summary?agencyApiKey=...&days=14`
-  - Returns funnel (`visitor -> lead -> qualified -> booked`),
-  - conversion rate, average response time, leads/day,
-  - and chart-ready series (`leads_over_time`, `conversion_percent`).
-  - Persists per-day aggregate snapshots into `daily_stats`.
+- GET /api/analytics/leads-per-day
+- GET /api/analytics/sources
+- GET /api/analytics/summary
 
-## Analytics Validation (Sample Data)
+### Operations
 
-1. Run migrations (includes `daily_stats` table).
-2. Apply seed file: [supabase/seeds/analytics_sample_data.sql](supabase/seeds/analytics_sample_data.sql).
-3. Call:
+- POST /api/follow-up/run
+- GET /api/health/supabase
+- Agency and key-management endpoints under /api/agencies and /api/agency
 
-- `GET /api/analytics/summary?agencyApiKey=analytics-test-key&days=7`
+## Deal Pipeline Behaviors
 
-4. Expected summary from seed:
+The current pipeline implementation includes the following operational guarantees:
 
-- `visitor: 4`
-- `lead: 4`
-- `qualified: 3`
-- `booked: 1`
-- `conversion_rate: 25.00`
-- `avg_response_time_seconds: 140.00`
+- Missing deal rows for existing leads are auto-created on pipeline and summary reads.
+- Newly seeded or discovered leads enter NEW_LEAD as the initial stage.
+- Stage updates are idempotent for repeated drag-drop requests.
+- Stage transition validation runs server-side.
 
-- `GET /api/health/supabase`
-  - Verifies server can reach Supabase and query `agencies`
+## Testing and Quality Gates
 
-## Multi-Tenant Model
-
-- Each agency has its own `api_key`.
-- API middleware resolves `agency_key -> agency_id` and forwards tenant context headers.
-- Every API call is scoped by `agency_id`.
-- Leads, messages, and events are isolated by tenant.
-- Supabase RLS policies enforce tenant isolation for authenticated users.
-
-## Isolation Test Scenario
-
-1. Create two agencies via `POST /api/agencies`.
-2. Insert leads for each agency using each generated API key.
-3. Query `GET /api/leads?agencyApiKey=<agency_A_key>` and verify only agency A leads return.
-4. Query `GET /api/leads?agencyApiKey=<agency_B_key>` and verify only agency B leads return.
-5. Repeat for `GET /api/leads/:leadId/messages` and verify no cross-tenant message access.
-
-## Deployment (Vercel)
-
-1. Import repository in Vercel.
-2. Set environment variables from `.env.example`.
-3. Deploy.
-4. Optional: Add Vercel cron to call `POST /api/follow-up/run`.
-
-Example `vercel.json` cron (optional):
-
-```json
-{
-  "crons": [
-    {
-      "path": "/api/follow-up/run",
-      "schedule": "*/20 * * * *"
-    }
-  ]
-}
-```
-
-## Event-Driven Backend (FastAPI + Redis Worker)
-
-For high-throughput lead ingestion and non-blocking notification delivery, a separate backend service is available under [backend/](backend/).
-
-Architecture:
-
-- Frontend -> FastAPI API -> Supabase
-- FastAPI emits events -> Redis queue
-- Worker consumes queue -> WhatsApp/Email providers
-- Outbox + logs in Supabase ensure retries and observability
-
-### Why this design
-
-- API requests stay fast (no synchronous WhatsApp calls)
-- Worker retries failures (up to 3 attempts)
-- Event outbox prevents silent event loss
-- Multi-tenant isolation enforced by `agency_id`
-- Demo tenant (`demo-agency-key`) routes to `events:test`
-
-### Production Hardening
-
-- Event state machine: `queued -> processing -> success -> failed -> retrying -> dead_letter`
-- Idempotency:
-  - `events.event_id` unique
-  - `events(agency_id, lead_id, event_type)` unique (when `lead_id` is not null)
-- Provider abstraction:
-  - `NotificationProvider`
-  - `WhatsAppProvider`, `EmailProvider`, `SMSProvider`, `TestProvider`
-- Retry safety:
-  - exponential-ish backoff (`2s`, `5s`, `12s`)
-  - DLQ promotion after max attempts
-- Observability:
-  - `event_logs` row per receive/process/provider/retry/DLQ action
-- Rate limiting:
-  - per-tenant per-channel Redis counter (`MAX_NOTIFICATIONS_PER_SECOND`)
-
-### Text Architecture Diagram
-
-```text
-Client/API consumer
-   |
-   v
-FastAPI (/v1/leads)
-   | validate + persist lead
-   v
-events table (status=queued, attempts=0)
-   |
-   +--> event_outbox (pending)
-            |
-            v
-      Redis queue (events:main | events:test)
-            |
-            v
-      Worker processor
-        - idempotency check (event_id/status)
-        - mark processing
-        - enforce tenant rate limit
-        - resolve provider by tenant/channel
-        - send notification
-        - mark success/failure/retrying/dead_letter
-            |
-            +--> event_logs
-            +--> dead_letter_queue (after max retries)
-```
-
-### Files
-
-- API: [backend/app/main.py](backend/app/main.py)
-- Queue: [backend/app/queue.py](backend/app/queue.py)
-- Outbox + logs: [backend/app/outbox.py](backend/app/outbox.py), [backend/app/logging_store.py](backend/app/logging_store.py)
-- Event store and lifecycle: [backend/app/event_store.py](backend/app/event_store.py)
-- Providers: [backend/app/providers.py](backend/app/providers.py)
-- Tenant rate limiting: [backend/app/rate_limiter.py](backend/app/rate_limiter.py)
-- Worker: [backend/worker/processor.py](backend/worker/processor.py), [backend/worker/run_worker.py](backend/worker/run_worker.py)
-- Outbox dispatcher: [backend/scripts/dispatch_outbox.py](backend/scripts/dispatch_outbox.py)
-- Event schema migrations: [supabase/migrations/20260416194500_event_queue_tables.sql](supabase/migrations/20260416194500_event_queue_tables.sql), [supabase/migrations/20260416201000_event_reliability_upgrade.sql](supabase/migrations/20260416201000_event_reliability_upgrade.sql)
-
-### Env Vars (backend service)
-
-Use existing Supabase vars and add:
+### Frontend / TypeScript
 
 ```bash
-REDIS_URL=redis://localhost:6379/0
-WHATSAPP_API_URL=https://your-whatsapp-provider/send
-WHATSAPP_API_KEY=
-EMAIL_API_URL=
-EMAIL_API_KEY=
-SMS_API_URL=
+npm run lint
+npm run test
+npm run build
+```
+
+### Backend (optional Python service)
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -r backend/requirements.txt
+pytest backend/tests
+```
+
+On Windows PowerShell, activate with:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+## Optional FastAPI + Worker Runtime
+
+Run API service:
+
+```bash
+uvicorn backend.app.main:app --reload --port 8000
+```
+
+Run worker:
+
+```bash
+python -m backend.worker.run_worker
+```
+
+Run demo worker queue:
+
+```bash
+python -m backend.worker.run_worker --demo
+```
+
+## Deployment Notes
+
+- Primary deployment target is Vercel for the Next.js application.
+- Ensure all server-only secrets are configured as protected environment variables.
+- Follow-up endpoint can be scheduled via cron.
+- Keep tenant API keys scoped and rotated on a regular policy.
+
+## Security and Operations Guidance
+
+- Never commit real API keys or tenant secrets.
+- Rotate any credential immediately if exposed in logs, screenshots, or config files.
+- Keep service-role keys server-side only.
+- Restrict admin key usage to internal operations.
+
+## Suggested Contribution Workflow
+
+1. Create a feature branch from main.
+2. Implement small, testable increments.
+3. Run lint, tests, and build locally before commit.
+4. Open PR with verification notes and migration impact.
+
+## Status
+
+The multi-page SaaS refactor, deal pipeline hardening, and production build validation are complete on the active feature branch.
 SMS_API_KEY=
 TENANT_PROVIDER_OVERRIDES={"agency-1":{"whatsapp":"test","email":"email"}}
 MAX_NOTIFICATIONS_PER_SECOND=5
