@@ -15,6 +15,8 @@ alter table public.agencies add column if not exists logo_url text;
 create table if not exists public.leads (
   id uuid primary key default gen_random_uuid(),
   agency_id uuid not null references public.agencies(id) on delete cascade,
+  source text,
+  campaign_id text,
   name text,
   email text,
   phone text,
@@ -191,6 +193,8 @@ alter table public.leads add column if not exists preferred_visit_period text;
 alter table public.leads add column if not exists appointment_status text not null default 'not_set';
 alter table public.leads add column if not exists hot_alert_sent boolean not null default false;
 alter table public.leads add column if not exists budget_value bigint;
+alter table public.leads add column if not exists source text;
+alter table public.leads add column if not exists campaign_id text;
 alter table public.leads add column if not exists currency text;
 alter table public.leads add column if not exists location_city text;
 alter table public.leads add column if not exists location_country text;
@@ -246,6 +250,8 @@ alter table public.event_outbox drop constraint if exists event_outbox_status_ch
 alter table public.event_outbox add constraint event_outbox_status_check check (status in ('pending', 'success', 'failed'));
 
 create index if not exists idx_leads_agency_id on public.leads(agency_id);
+create index if not exists idx_leads_source on public.leads(source);
+create index if not exists idx_leads_campaign_id on public.leads(campaign_id);
 create index if not exists idx_leads_last_message_at on public.leads(last_message_at desc);
 create index if not exists idx_leads_lead_score on public.leads(lead_score desc);
 create index if not exists idx_leads_lead_category on public.leads(lead_category);

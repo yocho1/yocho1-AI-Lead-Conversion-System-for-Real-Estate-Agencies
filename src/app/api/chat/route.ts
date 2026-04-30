@@ -18,10 +18,14 @@ const payloadSchema = z.object({
   message: z.string().min(1),
   leadId: z.string().uuid().optional().nullable(),
   demoMode: z.boolean().optional(),
+  source: z.enum(["facebook", "google", "organic"]).optional(),
+  campaignId: z.string().trim().min(1).max(120).optional(),
 });
 
 type LeadDbRow = {
   id: string;
+  source: "facebook" | "google" | "organic" | null;
+  campaign_id: string | null;
   name: string | null;
   email: string | null;
   phone: string | null;
@@ -193,7 +197,20 @@ function getClosingPeriodFollowUpQuestion() {
 
 function isMissingSenderColumnError(errorMessage: string | undefined) {
   if (!errorMessage) return false;
-  return errorMessage.toLowerCase().includes("sender") && errorMessage.toLowerCase().includes("schema cache");
+  const normalized = errorMessage.toLowerCase();
+  return (
+    normalized.includes("sender") &&
+    (normalized.includes("schema cache") || normalized.includes("does not exist"))
+  );
+}
+
+function isMissingAgencyIdColumnError(errorMessage: string | undefined) {
+  if (!errorMessage) return false;
+  const normalized = errorMessage.toLowerCase();
+  return (
+    normalized.includes("agency_id") &&
+    (normalized.includes("schema cache") || normalized.includes("does not exist"))
+  );
 }
 
 async function insertMessageCompat(
@@ -205,6 +222,7 @@ async function insertMessageCompat(
 ) {
   const sender = role === "assistant" ? "ai" : "user";
   const timestamp = new Date().toISOString();
+  let useAgencyColumn = true;
 
   let insertResult = await supabase.from("messages").insert({
     agency_id: agencyId,
@@ -215,42 +233,85 @@ async function insertMessageCompat(
     timestamp,
   });
 
+  if (insertResult.error && isMissingAgencyIdColumnError(insertResult.error.message)) {
+    useAgencyColumn = false;
+    insertResult = await supabase.from("messages").insert({
+      lead_id: leadId,
+      sender,
+      role,
+      content,
+      timestamp,
+    });
+  }
+
   if (!insertResult.error) {
     return insertResult;
   }
 
   if (isMissingSenderColumnError(insertResult.error.message)) {
-    insertResult = await supabase.from("messages").insert({
-      agency_id: agencyId,
-      lead_id: leadId,
-      role,
-      content,
-      timestamp,
-    });
+    insertResult = await supabase
+      .from("messages")
+      .insert(
+        useAgencyColumn
+          ? {
+              agency_id: agencyId,
+              lead_id: leadId,
+              role,
+              content,
+              timestamp,
+            }
+          : {
+              lead_id: leadId,
+              role,
+              content,
+              timestamp,
+            },
+      );
 
     if (!insertResult.error) {
       return insertResult;
     }
   }
 
-  insertResult = await supabase.from("messages").insert({
-    agency_id: agencyId,
-    lead_id: leadId,
-    sender,
-    content,
-    timestamp,
-  });
+  insertResult = await supabase
+    .from("messages")
+    .insert(
+      useAgencyColumn
+        ? {
+            agency_id: agencyId,
+            lead_id: leadId,
+            sender,
+            content,
+            timestamp,
+          }
+        : {
+            lead_id: leadId,
+            sender,
+            content,
+            timestamp,
+          },
+    );
 
   if (!insertResult.error) {
     return insertResult;
   }
 
-  return await supabase.from("messages").insert({
-    agency_id: agencyId,
-    lead_id: leadId,
-    content,
-    timestamp,
-  });
+  return await supabase
+    .from("messages")
+    .insert(
+      useAgencyColumn
+        ? {
+            agency_id: agencyId,
+            lead_id: leadId,
+            content,
+            timestamp,
+          }
+        : {
+            lead_id: leadId,
+            content,
+            timestamp,
+          },
+    );
 }
 
 export async function POST(request: Request) {
@@ -263,6 +324,15 @@ export async function POST(request: Request) {
     }
 
     const { agencyApiKey, leadId, message, demoMode = false } = parsed.data;
+    const requestUrl = new URL(request.url);
+    const querySource = requestUrl.searchParams.get("source");
+    const queryCampaignId = requestUrl.searchParams.get("campaign_id") || requestUrl.searchParams.get("campaignId");
+    const normalizedSourceCandidate = (parsed.data.source || querySource || "").toLowerCase();
+    const source: "facebook" | "google" | "organic" | null =
+      normalizedSourceCandidate === "facebook" || normalizedSourceCandidate === "google" || normalizedSourceCandidate === "organic"
+        ? normalizedSourceCandidate
+        : null;
+    const campaignId = (parsed.data.campaignId || queryCampaignId || "").trim() || null;
     const supabase = getServerSupabase();
 
     const agency = await resolveAgencyByApiKey(supabase, agencyApiKey);
@@ -281,6 +351,8 @@ export async function POST(request: Request) {
         .from("leads")
         .insert({
           agency_id: agency.id,
+          source,
+          campaign_id: campaignId,
           name: initialState.name,
           email: contactParts.email,
           phone: contactParts.phone,
@@ -317,7 +389,7 @@ export async function POST(request: Request) {
     const { data: lead, error: leadLoadError } = await supabase
       .from("leads")
       .select(
-        "id,name,email,phone,budget,budget_value,currency,location,location_city,location_country,property_type,buying_timeline,timeline_normalized,preferred_visit_day,preferred_visit_period,appointment_status,hot_alert_sent,chat_locked,lead_state",
+        "id,source,campaign_id,name,email,phone,budget,budget_value,currency,location,location_city,location_country,property_type,buying_timeline,timeline_normalized,preferred_visit_day,preferred_visit_period,appointment_status,hot_alert_sent,chat_locked,lead_state",
       )
       .eq("id", currentLeadId)
       .eq("agency_id", agency.id)
@@ -417,6 +489,8 @@ export async function POST(request: Request) {
     const { error: leadUpdateError } = await supabase
       .from("leads")
       .update({
+        source: lead.source || source,
+        campaign_id: lead.campaign_id || campaignId,
         name: state.name,
         email: state.email || contact.email,
         phone: state.phone || contact.phone,

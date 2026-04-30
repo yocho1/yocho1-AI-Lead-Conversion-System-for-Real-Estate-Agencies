@@ -14,7 +14,7 @@ export async function GET(request: Request) {
 
   const { data: leads, error } = await supabase
     .from("leads")
-    .select("id, name, email, phone, budget, budget_value, currency, location, location_city, location_country, property_type, buying_timeline, timeline_normalized, appointment_status, status, hot_alert_sent, chat_locked, last_message_at, created_at")
+    .select("id, source, campaign_id, name, email, phone, budget, budget_value, currency, location, location_city, location_country, property_type, buying_timeline, timeline_normalized, appointment_status, status, hot_alert_sent, chat_locked, last_message_at, created_at")
     .eq("agency_id", agencyContext.agencyId)
     .order("last_message_at", { ascending: false });
 
@@ -29,6 +29,8 @@ export async function GET(request: Request) {
   const demoLeads = [
     {
       id: "demo-hot-lead",
+      source: "facebook",
+      campaign_id: "demo-campaign-2026-q2",
       name: "Nadia Salem",
       email: "nadia.demo@lead.ai",
       phone: "+971500000111",

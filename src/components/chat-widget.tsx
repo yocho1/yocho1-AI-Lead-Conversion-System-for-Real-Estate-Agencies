@@ -11,7 +11,11 @@ type UiMessage = {
 interface ChatWidgetProps {
   agencyApiKey: string;
   demoMode?: boolean;
+  source?: string;
+  campaignId?: string;
 }
+
+const ALLOWED_SOURCES = new Set(["facebook", "google", "organic"]);
 
 const demoConversation: UiMessage[] = [
   {
@@ -37,7 +41,7 @@ const demoConversation: UiMessage[] = [
   },
 ];
 
-export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) {
+export function ChatWidget({ agencyApiKey, demoMode = false, source, campaignId }: ChatWidgetProps) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [leadId, setLeadId] = useState<string | null>(null);
@@ -56,6 +60,23 @@ export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) 
   const [chatLocked, setChatLocked] = useState(false);
 
   const canSend = useMemo(() => input.trim().length > 0 && !isTyping && !chatLocked, [input, isTyping, chatLocked]);
+  const tracking = useMemo(() => {
+    if (typeof window === "undefined") {
+      return {
+        source: source && ALLOWED_SOURCES.has(source.toLowerCase()) ? source.toLowerCase() : undefined,
+        campaignId,
+      };
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const sourceFromUrl = (params.get("source") || source || "").toLowerCase();
+    const campaignFromUrl = params.get("campaign_id") || params.get("campaignId") || campaignId || undefined;
+
+    return {
+      source: ALLOWED_SOURCES.has(sourceFromUrl) ? sourceFromUrl : undefined,
+      campaignId: campaignFromUrl,
+    };
+  }, [campaignId, source]);
 
   const streamAssistant = (text: string) => {
     let index = 0;
@@ -94,6 +115,8 @@ export function ChatWidget({ agencyApiKey, demoMode = false }: ChatWidgetProps) 
           leadId,
           message: userMessage,
           demoMode,
+          source: tracking.source,
+          campaignId: tracking.campaignId,
         }),
       });
 

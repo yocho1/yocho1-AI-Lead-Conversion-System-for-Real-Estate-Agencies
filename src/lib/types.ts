@@ -14,6 +14,8 @@ export interface Agency {
 export interface Lead {
   id: string;
   agency_id: string;
+  source: "facebook" | "google" | "organic" | null;
+  campaign_id: string | null;
   name: string | null;
   email: string | null;
   phone: string | null;
