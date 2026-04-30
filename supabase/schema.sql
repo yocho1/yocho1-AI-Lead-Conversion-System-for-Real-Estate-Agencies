@@ -74,6 +74,15 @@ create table if not exists public.messages (
   timestamp timestamptz not null default now()
 );
 
+create table if not exists public.properties (
+  id uuid primary key default gen_random_uuid(),
+  city text not null,
+  price bigint not null,
+  type text not null,
+  bedrooms int not null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.daily_stats (
   agency_id uuid not null references public.agencies(id) on delete cascade,
   stat_date date not null,
@@ -225,6 +234,9 @@ create index if not exists idx_leads_last_channel_used on public.leads(last_chan
 create index if not exists idx_messages_lead_id_timestamp on public.messages(lead_id, timestamp desc);
 create index if not exists idx_messages_agency_lead_timestamp on public.messages(agency_id, lead_id, timestamp desc);
 create index if not exists idx_messages_sender on public.messages(sender);
+create index if not exists idx_properties_city on public.properties(city);
+create index if not exists idx_properties_city_price on public.properties(city, price);
+create index if not exists idx_properties_type on public.properties(type);
 create index if not exists idx_daily_stats_agency_date on public.daily_stats(agency_id, stat_date desc);
 create index if not exists idx_event_outbox_pending_retry on public.event_outbox(status, next_retry_at);
 create index if not exists idx_event_logs_agency_created_at on public.event_logs(agency_id, created_at desc);

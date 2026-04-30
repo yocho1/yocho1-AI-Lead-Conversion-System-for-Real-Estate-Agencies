@@ -21,6 +21,7 @@ from backend.app.event_store import (
 )
 from backend.app.events import emit_event
 from backend.app.logging_store import log_event
+from backend.app.matching_engine import generate_matching_message, match_properties
 from backend.app.queue import enqueue_event, queue_name_for_agency, release_due_delayed_events
 from backend.app.rate_limiter import RateLimitExceededError, enforce_per_tenant_rate_limit
 from backend.app.supabase_client import get_supabase
@@ -134,7 +135,17 @@ def persist_decision(agency_id: str, lead_id: str, decision: dict) -> None:
 def execute_decision_action(agency_id: str, lead_id: str, event_id: str, decision: dict, lead: dict) -> None:
     action = decision["action"]
     if action == "send_whatsapp":
-        asyncio.run(send_hot_lead_notification(agency_id, lead, event_id))
+        matches = match_properties(lead)
+        recommendation_message = generate_matching_message(matches)
+        log_event(
+            agency_id,
+            lead_id,
+            HOT_EVENT,
+            "property_matching",
+            f"{recommendation_message}; top_ids={[item.get('id') for item in matches[:3]]}",
+            event_id=event_id,
+        )
+        asyncio.run(send_hot_lead_notification(agency_id, lead, event_id, recommendation_message))
         return
 
     if action == "schedule_followup":
@@ -170,16 +181,20 @@ def evaluate_and_decide(agency_id: str, lead_id: str, event_id: str, event_type:
     )
 
 
-def build_hot_lead_message(lead: dict) -> str:
-    return (
+def build_hot_lead_message(lead: dict, recommendation_message: str | None = None) -> str:
+    base = (
         f"HOT LEAD: {lead.get('name') or 'Unknown'} | "
         f"Budget: {lead.get('budget') or 'N/A'} | "
         f"Location: {json.dumps(lead.get('location') or {})} | "
         f"Timeline: {lead.get('timeline') or 'N/A'}"
     )
 
+    if recommendation_message:
+        return f"{base} | {recommendation_message}"
+    return base
 
-async def send_hot_lead_notification(agency_id: str, lead: dict, event_id: str) -> None:
+
+async def send_hot_lead_notification(agency_id: str, lead: dict, event_id: str, recommendation_message: str | None = None) -> None:
     idempotency_key = f"idempotency:whatsapp:{event_id}"
     locked = redis_client.set(idempotency_key, "1", nx=True, ex=60 * 60 * 24)
     if not locked:
@@ -199,7 +214,7 @@ async def send_hot_lead_notification(agency_id: str, lead: dict, event_id: str) 
     response = await route_message(
         lead=lead,
         to=recipient,
-        content=build_hot_lead_message(lead),
+        content=build_hot_lead_message(lead, recommendation_message),
         metadata={"event_id": event_id, "agency_id": agency_id, "lead_id": lead["id"], "event_type": HOT_EVENT},
     )
 
