@@ -30,6 +30,33 @@ type AnalyticsSummaryPanelProps = Readonly<{
   days?: number;
 }>;
 
+function isNoisyFailedFetch(reason: unknown) {
+  const message = reason instanceof Error ? reason.message : String(reason ?? "");
+  const stack = reason instanceof Error ? reason.stack || "" : "";
+  const lowerMessage = message.toLowerCase();
+  const lowerStack = stack.toLowerCase();
+
+  const isNetworkFetchFailure = lowerMessage.includes("failed to fetch") || lowerMessage.includes("err_internet_disconnected");
+  const isExtensionOrigin =
+    lowerStack.includes("chrome-extension://") ||
+    lowerStack.includes("frame_ant.js") ||
+    lowerMessage.includes("chrome-extension://") ||
+    lowerMessage.includes("frame_ant.js");
+
+  return isNetworkFetchFailure && (isExtensionOrigin || (typeof navigator !== "undefined" && !navigator.onLine));
+}
+
+async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (isNoisyFailedFetch(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 function normalizeDayLabel(day: string) {
   const date = new Date(day);
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -38,14 +65,37 @@ function normalizeDayLabel(day: string) {
 export function AnalyticsSummaryPanel({ agencyApiKey, days = 14 }: AnalyticsSummaryPanelProps) {
   const [payload, setPayload] = useState<SummaryPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState<boolean>(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+
+    globalThis.addEventListener("online", onOnline);
+    globalThis.addEventListener("offline", onOffline);
+
+    return () => {
+      globalThis.removeEventListener("online", onOnline);
+      globalThis.removeEventListener("offline", onOffline);
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
 
     const fetchSummary = async () => {
       setLoading(true);
+      if (!isOnline) {
+        if (mounted) {
+          setLoading(false);
+        }
+        return;
+      }
       try {
-        const response = await fetch(`/api/analytics/summary?agencyApiKey=${agencyApiKey}&days=${days}`);
+        const response = await safeFetch(`/api/analytics/summary?agencyApiKey=${agencyApiKey}&days=${days}`);
+        if (!response) {
+          return;
+        }
         if (!response.ok) {
           throw new Error(`Unable to load analytics summary (${response.status})`);
         }
@@ -73,7 +123,7 @@ export function AnalyticsSummaryPanel({ agencyApiKey, days = 14 }: AnalyticsSumm
       mounted = false;
       window.clearInterval(interval);
     };
-  }, [agencyApiKey, days]);
+  }, [agencyApiKey, days, isOnline]);
 
   const leadsMax = useMemo(() => {
     const values = payload?.charts.leads_over_time.map((point) => point.value) || [];

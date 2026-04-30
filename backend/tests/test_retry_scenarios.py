@@ -144,6 +144,7 @@ def test_force_whatsapp_api_failure(monkeypatch) -> None:
 
 def test_hot_decision_triggers_property_matching(monkeypatch) -> None:
     called = {"matching": 0, "message": 0, "notify": 0}
+    booking_hint = "Available slots: 2026-04-21T10:00:00+00:00"
 
     def fake_match_properties(lead: dict) -> list[dict]:
         called["matching"] += 1
@@ -155,10 +156,11 @@ def test_hot_decision_triggers_property_matching(monkeypatch) -> None:
 
     async def fake_send_hot_lead_notification(agency_id: str, lead: dict, event_id: str, recommendation_message: str | None = None) -> None:
         called["notify"] += 1
-        assert recommendation_message == "We found 2 properties matching your needs"
+        assert recommendation_message == f"We found 2 properties matching your needs. {booking_hint}"
 
     monkeypatch.setattr(processor, "match_properties", fake_match_properties)
     monkeypatch.setattr(processor, "generate_matching_message", fake_generate_matching_message)
+    monkeypatch.setattr(processor, "suggest_available_times", lambda agent_id=None: booking_hint)
     monkeypatch.setattr(processor, "send_hot_lead_notification", fake_send_hot_lead_notification)
     monkeypatch.setattr(processor, "log_event", lambda *args, **kwargs: None)
 

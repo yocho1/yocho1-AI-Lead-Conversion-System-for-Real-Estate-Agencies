@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
@@ -30,3 +31,10 @@ class LeadCreateRequest(BaseModel):
 class LeadEvent(BaseModel):
     type: Literal["lead.created", "lead.updated", "lead.hot", "lead.booked"]
     payload: dict
+
+
+class BookingRequest(BaseModel):
+    lead_id: str = Field(min_length=3)
+    agent_id: str = Field(min_length=2)
+    datetime: datetime
+    status: Literal["pending", "confirmed", "cancelled"] = "confirmed"
