@@ -5,6 +5,8 @@
   "scripts": {
     "test": "vitest run",
     "dev": "next dev",
+    "clean:next": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\"",
+    "dev:reset": "npm run clean:next ; npm run dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",

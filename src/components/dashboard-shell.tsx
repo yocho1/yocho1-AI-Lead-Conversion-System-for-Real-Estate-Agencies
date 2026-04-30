@@ -40,7 +40,7 @@ export function DashboardShell({ children }: Readonly<{ children: React.ReactNod
         </nav>
       </aside>
 
-      <main className="p-4 lg:p-[1.1rem]">{children}</main>
+      <main className="min-w-0 p-4 lg:p-[1.1rem]">{children}</main>
     </div>
   );
 }

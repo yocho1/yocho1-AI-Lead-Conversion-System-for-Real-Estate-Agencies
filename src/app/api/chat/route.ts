@@ -213,6 +213,243 @@ function isMissingAgencyIdColumnError(errorMessage: string | undefined) {
   );
 }
 
+function isMissingColumnError(errorMessage: string | undefined, column: string) {
+  if (!errorMessage) return false;
+  const normalized = errorMessage.toLowerCase();
+  return (
+    normalized.includes(column.toLowerCase()) &&
+    (normalized.includes("schema cache") || normalized.includes("does not exist") || normalized.includes("could not find"))
+  );
+}
+
+function omitKeys<T extends Record<string, unknown>>(value: T, keys: string[]) {
+  const copy = { ...value } as Record<string, unknown>;
+  for (const key of keys) {
+    delete copy[key];
+  }
+  return copy;
+}
+
+async function insertLeadCompat(
+  supabase: ReturnType<typeof getServerSupabase>,
+  payload: Record<string, unknown>,
+) {
+  const attempts = [
+    payload,
+    omitKeys(payload, ["source", "campaign_id"]),
+    omitKeys(payload, ["source", "campaign_id", "last_message_at"]),
+    omitKeys(payload, [
+      "source",
+      "campaign_id",
+      "last_message_at",
+      "budget_value",
+      "currency",
+      "location_city",
+      "location_country",
+      "timeline_normalized",
+      "preferred_visit_day",
+      "preferred_visit_period",
+      "appointment_status",
+      "hot_alert_sent",
+      "lead_state",
+      "chat_locked",
+    ]),
+  ];
+
+  let lastError: { message?: string } | null = null;
+
+  for (const candidate of attempts) {
+    const result = await supabase.from("leads").insert(candidate).select("id").single();
+    if (!result.error && result.data) {
+      return result;
+    }
+
+    lastError = result.error;
+    const errorMessage = result.error?.message;
+    const shouldRetry =
+      isMissingColumnError(errorMessage, "source") ||
+      isMissingColumnError(errorMessage, "campaign_id") ||
+      isMissingColumnError(errorMessage, "last_message_at") ||
+      isMissingColumnError(errorMessage, "budget_value") ||
+      isMissingColumnError(errorMessage, "currency") ||
+      isMissingColumnError(errorMessage, "location_city") ||
+      isMissingColumnError(errorMessage, "location_country") ||
+      isMissingColumnError(errorMessage, "timeline_normalized") ||
+      isMissingColumnError(errorMessage, "preferred_visit_day") ||
+      isMissingColumnError(errorMessage, "preferred_visit_period") ||
+      isMissingColumnError(errorMessage, "appointment_status") ||
+      isMissingColumnError(errorMessage, "hot_alert_sent") ||
+      isMissingColumnError(errorMessage, "lead_state") ||
+      isMissingColumnError(errorMessage, "chat_locked");
+
+    if (!shouldRetry) {
+      return result;
+    }
+  }
+
+  return { data: null, error: lastError };
+}
+
+function toNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function toNullableBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function toNullableNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function toLeadDbRowCompat(row: Record<string, unknown>): LeadDbRow {
+  return {
+    id: String(row.id),
+    source:
+      row.source === "facebook" || row.source === "google" || row.source === "organic"
+        ? row.source
+        : null,
+    campaign_id: toNullableString(row.campaign_id),
+    name: toNullableString(row.name),
+    email: toNullableString(row.email),
+    phone: toNullableString(row.phone),
+    budget: toNullableString(row.budget),
+    budget_value: toNullableNumber(row.budget_value),
+    currency: toNullableString(row.currency),
+    location: toNullableString(row.location),
+    location_city: toNullableString(row.location_city),
+    location_country: toNullableString(row.location_country),
+    property_type: toNullableString(row.property_type),
+    buying_timeline: toNullableString(row.buying_timeline),
+    timeline_normalized: toNullableString(row.timeline_normalized),
+    preferred_visit_day: toNullableString(row.preferred_visit_day),
+    preferred_visit_period: toNullableString(row.preferred_visit_period),
+    appointment_status:
+      row.appointment_status === "pending" || row.appointment_status === "reserved"
+        ? row.appointment_status
+        : "not_set",
+    hot_alert_sent: toNullableBoolean(row.hot_alert_sent) ?? false,
+    chat_locked: toNullableBoolean(row.chat_locked) ?? false,
+    lead_state: (row.lead_state && typeof row.lead_state === "object") ? (row.lead_state as LeadState) : null,
+  };
+}
+
+async function loadLeadCompat(
+  supabase: ReturnType<typeof getServerSupabase>,
+  leadId: string,
+  agencyId: string,
+) {
+  const fullSelect =
+    "id,source,campaign_id,name,email,phone,budget,budget_value,currency,location,location_city,location_country,property_type,buying_timeline,timeline_normalized,preferred_visit_day,preferred_visit_period,appointment_status,hot_alert_sent,chat_locked,lead_state";
+
+  const reducedSelect =
+    "id,name,email,phone,budget,location,property_type,buying_timeline,lead_state,chat_locked,preferred_visit_day,preferred_visit_period,appointment_status,hot_alert_sent";
+
+  const minimalSelect =
+    "id,name,email,phone,budget,location,property_type,buying_timeline";
+
+  const attempts = [fullSelect, reducedSelect, minimalSelect];
+  let lastError: { message?: string } | null = null;
+
+  for (const selectClause of attempts) {
+    const result = await supabase
+      .from("leads")
+      .select(selectClause)
+      .eq("id", leadId)
+      .eq("agency_id", agencyId)
+      .single();
+
+    if (!result.error && result.data) {
+      return { data: toLeadDbRowCompat(result.data as unknown as Record<string, unknown>), error: null };
+    }
+
+    lastError = result.error;
+    if (!isMissingColumnError(result.error?.message, "source")
+      && !isMissingColumnError(result.error?.message, "campaign_id")
+      && !isMissingColumnError(result.error?.message, "budget_value")
+      && !isMissingColumnError(result.error?.message, "currency")
+      && !isMissingColumnError(result.error?.message, "location_city")
+      && !isMissingColumnError(result.error?.message, "location_country")
+      && !isMissingColumnError(result.error?.message, "timeline_normalized")
+      && !isMissingColumnError(result.error?.message, "preferred_visit_day")
+      && !isMissingColumnError(result.error?.message, "preferred_visit_period")
+      && !isMissingColumnError(result.error?.message, "appointment_status")
+      && !isMissingColumnError(result.error?.message, "hot_alert_sent")
+      && !isMissingColumnError(result.error?.message, "chat_locked")
+      && !isMissingColumnError(result.error?.message, "lead_state")) {
+      return { data: null, error: result.error };
+    }
+  }
+
+  return { data: null, error: lastError };
+}
+
+async function updateLeadCompat(
+  supabase: ReturnType<typeof getServerSupabase>,
+  leadId: string,
+  agencyId: string,
+  payload: Record<string, unknown>,
+) {
+  const attempts = [
+    payload,
+    omitKeys(payload, ["source", "campaign_id"]),
+    omitKeys(payload, ["source", "campaign_id", "budget_value", "currency", "location_city", "location_country", "timeline_normalized"]),
+    omitKeys(payload, [
+      "source",
+      "campaign_id",
+      "budget_value",
+      "currency",
+      "location_city",
+      "location_country",
+      "timeline_normalized",
+      "preferred_visit_day",
+      "preferred_visit_period",
+      "appointment_status",
+      "chat_locked",
+      "lead_state",
+      "hot_alert_sent",
+      "last_message_at",
+    ]),
+  ];
+
+  let lastError: { message?: string } | null = null;
+
+  for (const candidate of attempts) {
+    const result = await supabase
+      .from("leads")
+      .update(candidate)
+      .eq("id", leadId)
+      .eq("agency_id", agencyId);
+
+    if (!result.error) {
+      return result;
+    }
+
+    lastError = result.error;
+    const shouldRetry =
+      isMissingColumnError(result.error?.message, "source") ||
+      isMissingColumnError(result.error?.message, "campaign_id") ||
+      isMissingColumnError(result.error?.message, "budget_value") ||
+      isMissingColumnError(result.error?.message, "currency") ||
+      isMissingColumnError(result.error?.message, "location_city") ||
+      isMissingColumnError(result.error?.message, "location_country") ||
+      isMissingColumnError(result.error?.message, "timeline_normalized") ||
+      isMissingColumnError(result.error?.message, "preferred_visit_day") ||
+      isMissingColumnError(result.error?.message, "preferred_visit_period") ||
+      isMissingColumnError(result.error?.message, "appointment_status") ||
+      isMissingColumnError(result.error?.message, "chat_locked") ||
+      isMissingColumnError(result.error?.message, "lead_state") ||
+      isMissingColumnError(result.error?.message, "hot_alert_sent") ||
+      isMissingColumnError(result.error?.message, "last_message_at");
+
+    if (!shouldRetry) {
+      return result;
+    }
+  }
+
+  return { error: lastError };
+}
+
 async function insertMessageCompat(
   supabase: ReturnType<typeof getServerSupabase>,
   agencyId: string,
@@ -347,33 +584,32 @@ export async function POST(request: Request) {
       const contact = demoMode ? DEMO_STATE.contact : null;
       const contactParts = getEmailAndPhone(contact);
 
-      const { data: insertedLead, error: leadInsertError } = await supabase
-        .from("leads")
-        .insert({
-          agency_id: agency.id,
-          source,
-          campaign_id: campaignId,
-          name: initialState.name,
-          email: contactParts.email,
-          phone: contactParts.phone,
-          budget: initialState.budget ? String(initialState.budget) : null,
-          budget_value: initialState.budget,
-          currency: initialState.currency,
-          location: initialState.location.raw,
-          location_city: initialState.location.city,
-          location_country: initialState.location.country,
-          property_type: initialState.property_type,
-          buying_timeline: initialState.timeline,
-          timeline_normalized: initialState.timeline_normalized,
-          status: initialState.status === "hot" ? "hot" : "cold",
-          lead_state: initialState,
-          chat_locked: false,
-          last_message_at: new Date().toISOString(),
-        })
-        .select("id")
-        .single();
+      const leadInsertPayload = {
+        agency_id: agency.id,
+        source,
+        campaign_id: campaignId,
+        name: initialState.name,
+        email: contactParts.email,
+        phone: contactParts.phone,
+        budget: initialState.budget ? String(initialState.budget) : null,
+        budget_value: initialState.budget,
+        currency: initialState.currency,
+        location: initialState.location.raw,
+        location_city: initialState.location.city,
+        location_country: initialState.location.country,
+        property_type: initialState.property_type,
+        buying_timeline: initialState.timeline,
+        timeline_normalized: initialState.timeline_normalized,
+        status: initialState.status === "hot" ? "hot" : "cold",
+        lead_state: initialState,
+        chat_locked: false,
+        last_message_at: new Date().toISOString(),
+      };
+
+      const { data: insertedLead, error: leadInsertError } = await insertLeadCompat(supabase, leadInsertPayload);
 
       if (leadInsertError || !insertedLead) {
+        console.error("Unable to create lead", leadInsertError?.message || leadInsertError);
         return NextResponse.json({ error: "Unable to create lead" }, { status: 500 });
       }
 
@@ -386,16 +622,14 @@ export async function POST(request: Request) {
 
     await insertMessageCompat(supabase, agency.id, currentLeadId, "user", message);
 
-    const { data: lead, error: leadLoadError } = await supabase
-      .from("leads")
-      .select(
-        "id,source,campaign_id,name,email,phone,budget,budget_value,currency,location,location_city,location_country,property_type,buying_timeline,timeline_normalized,preferred_visit_day,preferred_visit_period,appointment_status,hot_alert_sent,chat_locked,lead_state",
-      )
-      .eq("id", currentLeadId)
-      .eq("agency_id", agency.id)
-      .single();
+    const { data: lead, error: leadLoadError } = await loadLeadCompat(supabase, currentLeadId, agency.id);
 
-    if (leadLoadError || !lead) {
+    if (leadLoadError) {
+      console.error("Lead load failed", leadLoadError.message || leadLoadError);
+      return NextResponse.json({ error: "Unable to load lead profile" }, { status: 500 });
+    }
+
+    if (!lead) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
 
@@ -486,33 +720,31 @@ export async function POST(request: Request) {
     const contact = getEmailAndPhone(state.contact);
     const crmStatus = state.status === "booked" ? "hot" : state.status === "new" ? "cold" : state.status;
 
-    const { error: leadUpdateError } = await supabase
-      .from("leads")
-      .update({
-        source: lead.source || source,
-        campaign_id: lead.campaign_id || campaignId,
-        name: state.name,
-        email: state.email || contact.email,
-        phone: state.phone || contact.phone,
-        budget: state.budget ? String(state.budget) : null,
-        budget_value: state.budget,
-        currency: state.currency,
-        location: state.location.raw,
-        location_city: state.location.city,
-        location_country: state.location.country,
-        property_type: state.property_type,
-        buying_timeline: state.timeline,
-        timeline_normalized: state.timeline_normalized,
-        status: crmStatus,
-        lead_state: state,
-        preferred_visit_day: visitDay,
-        preferred_visit_period: visitPeriod,
-        appointment_status: appointmentStatus,
-        chat_locked: chatLocked,
-        last_message_at: new Date().toISOString(),
-      })
-      .eq("id", currentLeadId)
-      .eq("agency_id", agency.id);
+    const leadUpdatePayload = {
+      source: lead.source || source,
+      campaign_id: lead.campaign_id || campaignId,
+      name: state.name,
+      email: state.email || contact.email,
+      phone: state.phone || contact.phone,
+      budget: state.budget ? String(state.budget) : null,
+      budget_value: state.budget,
+      currency: state.currency,
+      location: state.location.raw,
+      location_city: state.location.city,
+      location_country: state.location.country,
+      property_type: state.property_type,
+      buying_timeline: state.timeline,
+      timeline_normalized: state.timeline_normalized,
+      status: crmStatus,
+      lead_state: state,
+      preferred_visit_day: visitDay,
+      preferred_visit_period: visitPeriod,
+      appointment_status: appointmentStatus,
+      chat_locked: chatLocked,
+      last_message_at: new Date().toISOString(),
+    };
+
+    const { error: leadUpdateError } = await updateLeadCompat(supabase, currentLeadId, agency.id, leadUpdatePayload);
 
     if (leadUpdateError) {
       return NextResponse.json({ error: "Unable to update lead profile" }, { status: 500 });

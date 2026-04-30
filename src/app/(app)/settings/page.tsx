@@ -1,6 +1,4 @@
-import { DashboardShell } from "@/components/dashboard-shell";
-
-export default async function DashboardSettingsPage({
+export default async function SettingsPage({
   searchParams,
 }: Readonly<{
   searchParams: Promise<{ agencyKey?: string; demo?: string }>;
@@ -8,26 +6,14 @@ export default async function DashboardSettingsPage({
   const params = await searchParams;
   const appUrl = process.env.APP_URL || "http://localhost:3000";
   const agencyKey = params.agencyKey || "YOUR_AGENCY_API_KEY";
-  const embedScript = `<script>
-(function() {
-  var script = document.createElement("script");
-  script.src = "${appUrl}/widget.js";
-  script.async = true;
-  script.onload = function() {
-    window.AIWidget.init({
-      agencyKey: "${agencyKey}"
-    });
-  };
-  document.head.appendChild(script);
-})();
-</script>`;
+  const embedScript = `<script>\n(function() {\n  var script = document.createElement(\"script\");\n  script.src = \"${appUrl}/widget.js\";\n  script.async = true;\n  script.onload = function() {\n    window.AIWidget.init({\n      agencyKey: \"${agencyKey}\"\n    });\n  };\n  document.head.appendChild(script);\n})();\n</script>`;
 
   return (
-    <DashboardShell>
+    <>
       <section className="settings-hero surface-card surface-glass">
         <div>
-          <h1 className="dashboard-title">Agency Settings</h1>
-          <p className="dashboard-subtitle">Control branding, qualification logic, channel behavior, and deployment quality from one enterprise workspace.</p>
+          <h2 className="dashboard-title">Settings</h2>
+          <p className="dashboard-subtitle">Control branding, qualification logic, channel behavior, and deployment quality.</p>
         </div>
         <div className="settings-hero-badges">
           <span className="settings-pill">Multi-channel Ops</span>
@@ -83,46 +69,6 @@ export default async function DashboardSettingsPage({
                 </label>
               </div>
             </article>
-
-            <article className="settings-panel surface-card">
-              <div className="settings-panel-header">
-                <h3>WhatsApp Channel</h3>
-                <p>Sender identity and provider routing for outbound lead notifications.</p>
-              </div>
-              <div className="settings-fields">
-                <label className="settings-field">
-                  <span className="settings-label">Sender Number</span>
-                  <input className="input" defaultValue="+971500000111" />
-                </label>
-                <label className="settings-field">
-                  <span className="settings-label">Provider</span>
-                  <select className="select" defaultValue="whatsapp">
-                    <option value="whatsapp">WhatsApp Provider</option>
-                    <option value="test">Test Provider</option>
-                  </select>
-                </label>
-              </div>
-            </article>
-
-            <article className="settings-panel surface-card">
-              <div className="settings-panel-header">
-                <h3>Integrations</h3>
-                <p>Connect CRM webhooks and calendar provider used by booking flow.</p>
-              </div>
-              <div className="settings-fields">
-                <label className="settings-field">
-                  <span className="settings-label">Webhook URL</span>
-                  <input className="input" placeholder="https://your-crm.example.com/webhook" />
-                </label>
-                <label className="settings-field">
-                  <span className="settings-label">Calendar Integration</span>
-                  <select className="select" defaultValue="google">
-                    <option value="google">Google Calendar</option>
-                    <option value="none">Not connected</option>
-                  </select>
-                </label>
-              </div>
-            </article>
           </div>
 
           <article className="settings-panel surface-card settings-embed">
@@ -135,9 +81,6 @@ export default async function DashboardSettingsPage({
               <button className="action-btn btn-primary">Save Settings</button>
               <button className="action-btn btn-secondary">Test Widget</button>
             </div>
-            <p className="settings-note">
-              This widget lazy-loads, validates agency branding, and opens as a floating assistant on desktop and full-screen on mobile.
-            </p>
           </article>
         </div>
 
@@ -148,12 +91,11 @@ export default async function DashboardSettingsPage({
             <li>Branding profile completed</li>
             <li>Qualification rules validated</li>
             <li>Channel provider configured</li>
-            <li>Webhook endpoint tested</li>
             <li>Widget snippet installed</li>
           </ul>
           <div className="settings-aside-footer">Enterprise profile: 85% complete</div>
         </aside>
       </section>
-    </DashboardShell>
+    </>
   );
 }
