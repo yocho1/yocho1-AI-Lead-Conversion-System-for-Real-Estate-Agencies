@@ -8,6 +8,7 @@ from backend.app.config import get_settings
 from backend.app.channel_router import route_message
 from backend.app.decision_engine import decide_next_action
 from backend.app.booking_engine import suggest_available_times
+from backend.app.automation_engine import run_automations_for_event
 from backend.app.event_store import (
     EVENT_STATUS_DEAD_LETTER,
     EVENT_STATUS_FAILED,
@@ -198,6 +199,39 @@ def evaluate_and_decide(agency_id: str, lead_id: str, event_id: str, event_type:
     )
 
 
+def execute_automation_rules(event_type: str, payload: dict, event_id: str) -> None:
+    agency_id = str(payload.get("agency_id") or "")
+    lead_id = str(payload.get("lead_id") or "")
+
+    try:
+        outcome = run_automations_for_event(event_type, payload)
+    except Exception as exc:  # noqa: BLE001
+        log_event(
+            agency_id,
+            lead_id or None,
+            event_type,
+            "automation_error",
+            f"Automation execution failed: {exc}",
+            event_id=event_id,
+        )
+        return
+
+    matched = int(outcome.get("matched") or 0)
+    executed = int(outcome.get("executed") or 0)
+
+    if matched == 0:
+        return
+
+    log_event(
+        agency_id,
+        lead_id or None,
+        event_type,
+        "automation_checked",
+        f"Automation rules matched={matched} executed={executed}",
+        event_id=event_id,
+    )
+
+
 def build_hot_lead_message(lead: dict, recommendation_message: str | None = None) -> str:
     base = (
         f"HOT LEAD: {lead.get('name') or 'Unknown'} | "
@@ -381,6 +415,8 @@ def process_event(message: dict) -> None:
             log_event(agency_id, lead_id, event_type, "followup_due", "Scheduled follow-up is due", event_id=event_id)
             mark_success_and_log(agency_id, lead_id, event_type, event_id, attempt)
             return
+
+        execute_automation_rules(event_type, payload, event_id)
 
         evaluate_and_decide(agency_id, lead_id, event_id, event_type)
 

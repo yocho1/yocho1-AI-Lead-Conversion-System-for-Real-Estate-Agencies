@@ -8,6 +8,7 @@ import { HotLeadsFocus } from "@/components/hot-leads-focus";
 import { LiveActivityFeed } from "@/components/live-activity-feed";
 import { AIPerformanceBlock } from "@/components/ai-performance-block";
 import { AnalyticsSummaryPanel } from "@/components/analytics-summary-panel";
+import { AutomationBuilderPanel } from "@/components/automation-builder-panel";
 import { use, useState } from "react";
 
 type DashboardPageProps = Readonly<{
@@ -28,6 +29,7 @@ export default function DashboardPage(props: DashboardPageProps) {
       <AnalyticsSummaryPanel agencyApiKey={agencyApiKey} />
       <LiveActivityFeed leads={analyticsLeads} />
       <AIPerformanceBlock />
+      <AutomationBuilderPanel agencyApiKey={agencyApiKey} />
       <HotLeadsFocus leads={analyticsLeads} />
       <ChatPreviewPanel />
       <LeadsBoard agencyApiKey={agencyApiKey} demoMode={demoMode} />
