@@ -5,6 +5,7 @@ from datetime import datetime
 import redis
 
 from backend.app.config import get_settings
+from backend.app.channel_router import route_message
 from backend.app.decision_engine import decide_next_action
 from backend.app.event_store import (
     EVENT_STATUS_DEAD_LETTER,
@@ -20,7 +21,6 @@ from backend.app.event_store import (
 )
 from backend.app.events import emit_event
 from backend.app.logging_store import log_event
-from backend.app.providers import resolve_provider
 from backend.app.queue import enqueue_event, queue_name_for_agency, release_due_delayed_events
 from backend.app.rate_limiter import RateLimitExceededError, enforce_per_tenant_rate_limit
 from backend.app.supabase_client import get_supabase
@@ -41,15 +41,40 @@ def queue_for_mode(is_demo: bool) -> str:
 
 
 def fetch_lead(agency_id: str, lead_id: str) -> dict | None:
-    result = (
+    select_clause = "id,agency_id,name,email,phone,budget,budget_value,location,timeline,timeline_normalized,status,whatsapp_sent,preferred_channel,last_channel_used,delivery_status"
+    try:
+        result = (
+            supabase.table("leads")
+            .select(select_clause)
+            .eq("id", lead_id)
+            .eq("agency_id", agency_id)
+            .maybe_single()
+            .execute()
+        )
+        return result.data
+    except Exception:  # noqa: BLE001
+        fallback_result = (
+            supabase.table("leads")
+            .select("id,agency_id,name,email,phone,budget,budget_value,location,timeline,timeline_normalized,status,whatsapp_sent")
+            .eq("id", lead_id)
+            .eq("agency_id", agency_id)
+            .maybe_single()
+            .execute()
+        )
+        return fallback_result.data
+
+
+def update_delivery_state(agency_id: str, lead_id: str, channel: str | None, status: str) -> None:
+    payload = {"delivery_status": status}
+    if channel:
+        payload["last_channel_used"] = channel
+    (
         supabase.table("leads")
-        .select("id,agency_id,name,email,phone,budget,budget_value,location,timeline,timeline_normalized,status,whatsapp_sent")
+        .update(payload)
         .eq("id", lead_id)
         .eq("agency_id", agency_id)
-        .maybe_single()
         .execute()
     )
-    return result.data
 
 
 def _parse_iso_datetime(value: str) -> datetime | None:
@@ -169,16 +194,28 @@ async def send_hot_lead_notification(agency_id: str, lead: dict, event_id: str) 
     if not recipient:
         raise RuntimeError("lead has no recipient contact")
 
-    enforce_per_tenant_rate_limit(agency_id, "whatsapp")
-    provider = resolve_provider("whatsapp", agency_id)
-    response = await provider.send(build_hot_lead_message(lead), recipient)
+    channel = str(lead.get("preferred_channel") or "").strip().lower() or "whatsapp"
+    enforce_per_tenant_rate_limit(agency_id, channel)
+    response = await route_message(
+        lead=lead,
+        to=recipient,
+        content=build_hot_lead_message(lead),
+        metadata={"event_id": event_id, "agency_id": agency_id, "lead_id": lead["id"], "event_type": HOT_EVENT},
+    )
+
     if not response.ok:
+        update_delivery_state(agency_id, lead["id"], response.channel, "failed")
         redis_client.delete(idempotency_key)
-        raise RuntimeError(response.message)
+        error_detail = response.attempts[-1].message if response.attempts else "all channel attempts failed"
+        raise RuntimeError(error_detail)
 
     (
         supabase.table("leads")
-        .update({"whatsapp_sent": True})
+        .update({
+            "whatsapp_sent": True,
+            "last_channel_used": response.channel,
+            "delivery_status": response.status,
+        })
         .eq("id", lead["id"])
         .eq("agency_id", agency_id)
         .execute()
@@ -189,7 +226,7 @@ async def send_hot_lead_notification(agency_id: str, lead: dict, event_id: str) 
         lead["id"],
         HOT_EVENT,
         "provider_success",
-        f"Provider={response.provider} sent",
+        f"Provider={response.channel} sent",
         event_id=event_id,
     )
 

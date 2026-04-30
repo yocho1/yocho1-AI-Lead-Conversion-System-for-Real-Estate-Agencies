@@ -56,6 +56,8 @@ def create_lead(payload: LeadCreateRequest) -> dict:
         "property_type": payload.property_type,
         "timeline": timeline_raw,
         "timeline_normalized": timeline_normalized,
+        "preferred_channel": payload.preferred_channel,
+        "delivery_status": "pending",
         "status": status,
         "whatsapp_sent": False,
         "created_at": datetime.now(timezone.utc).isoformat(),

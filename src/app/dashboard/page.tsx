@@ -7,6 +7,7 @@ import { ChatPreviewPanel } from "@/components/chat-preview-panel";
 import { HotLeadsFocus } from "@/components/hot-leads-focus";
 import { LiveActivityFeed } from "@/components/live-activity-feed";
 import { AIPerformanceBlock } from "@/components/ai-performance-block";
+import { AnalyticsSummaryPanel } from "@/components/analytics-summary-panel";
 import { use, useState } from "react";
 
 type DashboardPageProps = Readonly<{
@@ -24,6 +25,7 @@ export default function DashboardPage(props: DashboardPageProps) {
       <h1 className="dashboard-title">Dashboard</h1>
       <p className="dashboard-subtitle">Monitor lead velocity, conversion momentum, and AI-driven qualification in one enterprise command center.</p>
       <AnalyticsCard agencyApiKey={agencyApiKey} demoMode={demoMode} onLeadsLoaded={setAnalyticsLeads} />
+      <AnalyticsSummaryPanel agencyApiKey={agencyApiKey} />
       <LiveActivityFeed leads={analyticsLeads} />
       <AIPerformanceBlock />
       <HotLeadsFocus leads={analyticsLeads} />

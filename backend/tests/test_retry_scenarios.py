@@ -5,7 +5,6 @@ from types import SimpleNamespace
 os.environ.setdefault("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.signature")
 
-from backend.app.providers import ProviderResponse
 from backend.worker import processor, retry_manager
 
 
@@ -95,10 +94,16 @@ def test_retry_delays_respected_on_failure(monkeypatch) -> None:
 
 
 def test_force_whatsapp_api_failure(monkeypatch) -> None:
-    class FailingProvider:
-        async def send(self, message: str, recipient: str) -> ProviderResponse:
-            await asyncio.sleep(0)
-            return ProviderResponse(ok=False, provider="whatsapp", message="forced whatsapp api failure")
+    class FailingRouteResponse:
+        def __init__(self) -> None:
+            self.ok = False
+            self.channel = "whatsapp"
+            self.status = "failed"
+            self.attempts = [SimpleNamespace(channel="whatsapp", ok=False, message="forced whatsapp api failure")]
+
+    async def failing_route_message(*args, **kwargs):
+        await asyncio.sleep(0)
+        return FailingRouteResponse()
 
     lead = {
         "id": "lead-9",
@@ -111,8 +116,9 @@ def test_force_whatsapp_api_failure(monkeypatch) -> None:
         "whatsapp_sent": False,
     }
 
-    monkeypatch.setattr(processor, "resolve_provider", lambda channel, agency_id: FailingProvider())
+    monkeypatch.setattr(processor, "route_message", failing_route_message)
     monkeypatch.setattr(processor, "enforce_per_tenant_rate_limit", lambda agency_id, channel: None)
+    monkeypatch.setattr(processor, "update_delivery_state", lambda agency_id, lead_id, channel, status: None)
     monkeypatch.setattr(processor, "log_event", lambda *args, **kwargs: None)
 
     deleted_keys: list[str] = []
